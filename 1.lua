@@ -1,8 +1,8 @@
 -- ============================================================
 -- MODDED BY ADITYA_ORG + @ADITYA_ORG
--- Complete MOD with Bypass V2.0 (14 Modules) + SKINS + PBC WALLHACK
+-- Complete MOD with ULTRA SAFE MERGED BYPASS (TrnDravix + Aditya_ORG + Self-Heal)
 -- All features: Aimbot, ESP, Wallhack, PBC Wallhack, 165 FPS, No Grass, iPad View, SKINS
--- Bypass activates on game start with popup
+-- Bypass: modulePatches hooks + extra modules + self-heal timer
 -- ============================================================
 
 -- ============================================================
@@ -25,11 +25,11 @@ if _G.Mod_FPS165_Enabled == nil then _G.Mod_FPS165_Enabled = true end
 if _G.Mod_NoGrass_Enabled == nil then _G.Mod_NoGrass_Enabled = true end
 if _G.Mod_iPadView_Enabled == nil then _G.Mod_iPadView_Enabled = false end
 if _G.Mod_iPadViewDistance == nil then _G.Mod_iPadViewDistance = 90 end
-if _G.Mod_Skin_Enabled == nil then _G.Mod_Skin_Enabled = false end  -- SKIN TOGGLE
-if _G.Mod_PBCWallhack_Enabled == nil then _G.Mod_PBCWallhack_Enabled = false end  -- PBC WALLHACK TOGGLE
+if _G.Mod_Skin_Enabled == nil then _G.Mod_Skin_Enabled = false end
+if _G.Mod_PBCWallhack_Enabled == nil then _G.Mod_PBCWallhack_Enabled = false end
 
 -- ============================================================
--- ESP CONFIG (new for wallhack colors/glow/brightness)
+-- ESP CONFIG (wallhack colors/glow/brightness)
 -- ============================================================
 _G.ESPConfig = _G.ESPConfig or {
     Wallhack = false,
@@ -63,27 +63,826 @@ local string = string
 local os = os
 
 -- ============================================================
--- NOP FUNCTIONS (used by bypass and mod)
+-- ============ ULTRA SAFE MERGED BYPASS ======================
 -- ============================================================
+
+-- NOP FUNCTIONS
 local function nop() end
 local function nopt() return {} end
 local function nopnil() return nil end
 local function noptrue() return true end
 local function nopfalse() return false end
 local function nopstr() return "" end
-_G.CheatsEnabled = true
+local retFalse = nopfalse
+local retZero = function() return 0 end
+local retEmpty = nopt
+local retTrue = noptrue
+local retEmptyString = nopstr
 
 local function safe_require(path)
     local ok, mod = pcall(require, path)
     return ok and mod or nil
 end
 
-local ok_gd, GameplayData = pcall(require, "GameLua.GameCore.Data.GameplayData")
-if not ok_gd then GameplayData = nil end
+_G.CheatsEnabled = true
 
 -- ============================================================
--- MODULE 1: DOMAIN BLOCKER (HTTP + SOCKET + WEBVIEW)
+-- PART 1: TRNDRAVIX MODULE PATCHES (hooks require/import)
 -- ============================================================
+local modulePatches = {
+    ["GameLua.Mod.BaseMod.Common.Security.HiggsBosonComponent"] = {
+        methods = {
+            ControlMHActive = nop, Tick = nop, OnTick = nop, ReceiveTick = nop, MHActiveLogic = nop,
+            TriggerAvatarCheck = nop, StartAvatarCheck = nop, ReportItemID = nop, OnReportItemID = nop,
+            ReceiveAnyDamage = nop, OnWeaponHitRecord = nop, ShowSecurityAlert = nop, StaticShowSecurityAlertInDev = nop,
+            SendHisarData = nop, OnLogin = nop, ValidateSecurityData = nop, CheckMemoryIntegrity = nop,
+            ReportAbnormalMemory = nop, OnMemoryScanComplete = nop, SendDetectionResult = nop, TriggerClientScan = nop,
+            SendAntiDataFlow = nop, SendHitFireBtnFlow = nop, SkipAlertServer = function() end,
+            CheckWeaponIntegrity = retTrue, CheckAvatarIntegrity = retTrue, CheckBulletIntegrity = retTrue,
+            OnGameModeType = nop,
+        },
+        fields = { bMHActive = false, mHActive = 0 },
+        retvals = { GetNetAvatarItemIDs = retEmpty, GetCurWeaponSkinID = retZero, GetDetectionResult = retEmpty },
+        custom = function(m)
+            if m.__inner_impl then
+                local i = m.__inner_impl
+                i.SendAntiDataFlow = nop; i.SendHitFireBtnFlow = nop; i.OnBattleResult = nop; i.SendHisarData = nop
+            end
+            if m.BlackList then for k in pairs(m.BlackList) do m.BlackList[k] = nil end end
+            if m.SkipAlertServer then pcall(m.SkipAlertServer, m) end
+        end,
+    },
+    ["GameLua.Mod.BaseMod.Common.Security.SafetyDetectionSubsystem"] = {
+        methods = { DetectAbnormal = nop, ReportAbnormal = nop, OnDetectionResult = nop, TriggerSafetyScan = nop },
+        retvals = { GetScanResults = retEmpty, IsAnomalyDetected = retFalse },
+    },
+    _G_AvatarCheckCallback = {
+        table = "_G.AvatarCheckCallback",
+        methods = {
+            StartAvatarCheck = nop, OnReportItemID = nop,
+            PostPlayerControllerLoginInit = function(pc)
+                pcall(function()
+                    if pc and pc.HiggsBosonComponent then
+                        pc.HiggsBosonComponent:ControlMHActive(0)
+                        pc.HiggsBosonComponent.bMHActive = false
+                    end
+                end)
+            end
+        }
+    },
+    ["GameLua.Mod.BaseMod.Common.Security.PakIntegrityChecker"] = {
+        methods = { ShowPakMismatchAlert = nop },
+        retvals = { Verify = retFalse, CheckPakFile = retZero, GetPakStatus = retZero }
+    },
+    ["client.slua.logic.pak.logic_pak_verify"] = {
+        retvals = { Verify = retFalse, CheckPakFile = retZero, GetPakStatus = retZero }
+    },
+    _G_STExtra = {
+        table = "_G.STExtraBlueprintFunctionLibrary",
+        retvals = { CheckFileIntegrity = retFalse, VerifySignature = retFalse, CheckGameLuaIntegrity = retFalse }
+    },
+    _G_TssSDK = {
+        table = "_G.TssSDK",
+        methods = {
+            ReportData = nop, SendToServer = nop, SetUserInfo = nop,
+            Init = nop, Start = nop, Verify = retTrue, CheckIntegrity = retTrue, Check = retTrue,
+        },
+        retvals = { GetSignature = function() return "BYPASSED" end }
+    },
+    _G_TssSDKHelper = { table = "_G.TssSDKHelper", methods = { ReportData = nop } },
+    _G_Bugly = { table = "_G.Bugly", methods = { ReportException = nop, SetCustomData = nop } },
+    _G_Beacon = { table = "_G.Beacon", methods = { Report = nop } },
+    _G_CrashSight = { table = "_G.CrashSight", methods = { ReportException = nop, SetCustomData = nop, Log = nop } },
+    ["GameLua.Mod.BaseMod.Common.Security.SecurityNotifyPCFeature"] = {
+        methods = {
+            ClientRPC_SyncBanID = nop, ClientRPC_StrongTips = nop, ClientRPC_NormalTips = nop, Notify = nop,
+            ClientRPC_NotifyBan = nop, ClientRPC_NotifyPunish = nop, ClientRPC_NotifyIllegalProgram = nop
+        },
+        custom = function(m) if m.__inner_impl then m.__inner_impl.SyncBanInfo = nop end end,
+    },
+    ["client.slua.logic.ban.ClientBanLogic"] = {
+        methods = {
+            OnSyncBanInfo = nop, OnVoiceBanNotify = nop, OnRealTimeVoiceBanNotify = nop, OnVoiceBanSuccess = nop,
+            OnSyncMicSuspicious = nop, OnSyncMicPreFilter = nop, OnNotifyWarningTips = nop, ReqBanInfo = nop
+        },
+    },
+    ["client.slua.logic.ban.BanTipsLogic"] = {
+        methods = { ShowBanTips = nop, ShowPunishTips = nop, ShowWarningTips = nop, OnReceiveBanNotice = nop }
+    },
+    _G_ban_util = { table = "_G.ban_util", retvals = { CheckBanStatus = retFalse, GetBanTime = retZero, IsBanForever = retFalse } },
+    _G_logic_tt_ban = {
+        table = "_G.logic_tt_ban",
+        methods = { CheckIfCanCreateRole = nop },
+        retvals = { JumpAppealURL = retFalse, GetCarrierInfo = function() return '[{"mcc":"000"}]' end }
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.ClientHawkEyePatrolSubsystem"] = {
+        methods = {
+            _OnHawkSync = nop, _OnHawkReportSuccess = nop, _StartExitGameTimer = nop,
+            _OnRecvInspectorBroadcastCount = nop, SendReportTLog = nop, ReportCheat = nop,
+            _OnHawkFlag = nop, ReportPlayerFlag = nop, RequestFlagPlayer = nop, SendFlagReport = nop,
+            RequestImprison = nop, IsDuringHawkEyePatrol = retFalse, HasReported = retTrue,
+            _InitHawkEyePatrolSubsystem = nop, _CollectBeWatchedPlayerInfo = nop, ServerRPC_HawkReportCheat = nop,
+        },
+        retvals = { CanInspectorBroadcast = retFalse },
+        custom = function(mod)
+            if mod.__inner_impl then
+                local i = mod.__inner_impl
+                i._OnHawkSync = nop; i._OnHawkReportSuccess = nop; i.TryShowReportedTips = nop
+            end
+        end,
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.HawkEyeSpectate.ClientHawkEyePatrolSubsystem"] = {
+        custom = function(mod)
+            if mod.__inner_impl then
+                local i = mod.__inner_impl
+                i._OnHawkSync = nop; i._OnHawkReportSuccess = nop; i.TryShowReportedTips = nop
+            end
+        end,
+    },
+    _G_ServerDataMgr = {
+        table = "_G.ServerDataMgr",
+        custom = function(m)
+            if m.DeletablePlayerResultKey then
+                for _, k in ipairs({
+                    "SuspiciousHitCount", "EspTotalSimTraceCnt", "EspTotalImeFocusCnt",
+                    "ClientGravityAnomalyCount", "FireCount", "SpeedCheatCount", "JumpCount", "VehicleSpeedHackCount",
+                    "HeadshotCount", "KillCount", "Accuracy", "FlagCount", "TotalFlags", "IsFlagged",
+                    "FlaggedByHawkEye", "FlaggedByInspection", "FlagTimestamp", "FlagLevel", "FlagSeverity",
+                }) do m.DeletablePlayerResultKey[k] = true end
+            end
+            if m.FlagCount then m.FlagCount = 0 end
+            if m.TotalFlags then m.TotalFlags = 0 end
+            if m.IsFlagged then m.IsFlagged = false end
+            if m.FlaggedByHawkEye then m.FlaggedByHawkEye = false end
+            if m.FlaggedByInspection then m.FlaggedByInspection = false end
+            if m.FlagTimestamp then m.FlagTimestamp = 0 end
+            if m.FlagLevel then m.FlagLevel = 0 end
+            if m.FlagSeverity then m.FlagSeverity = 0 end
+        end
+    },
+    ["client.slua.logic.report.ToolReportUtil"] = {
+        retvals = { IsReleaseVersion = retFalse, IsWhite = retFalse, GetReportSwitch = retFalse }
+    },
+    _G_ClientToolsReport = { table = "_G.ClientToolsReport", methods = { SendReport = nop, SendException = nop } },
+    _G_ReportPlatformCrashKit = { table = "_G.ReportPlatformCrashKit", methods = { Send = nop, ForceSend = nop } },
+    ["GameLua.Mod.BaseMod.Client.Security.ClientGlueHiaSystem"] = {
+        methods = {
+            CheckHitIntegrity = nop, InitSession = nop, OnBattleEnd = nop,
+            LuaFunc1 = retTrue, LuaFunc4 = retFalse, LuaFunc5 = retFalse,
+            LuaFunc6 = retFalse, LuaFunc7 = retFalse, LuaFunc8 = retFalse,
+            LuaFunc9 = nop,
+        }
+    },
+    ["GameLua.Mod.Escape.Gameplay.Subsystem.BehaviorScoreSubsystem"] = {
+        methods = { OnHandleBehaviorScore = nop, AIPerceptionScore = nop, ReportBehavior = nop },
+        retvals = { CalcFinalScore = retZero }
+    },
+    _G_AntiAddictionHandler = {
+        table = "_G.AntiaddctionHandler",
+        methods = { send_anti_addiction_req = nop, send_anti_addiction_notify = nop, on_check_nonage_anti_work = nop }
+    },
+    _G_AccessRestrictionHandler = {
+        table = "_G.AccessRestrictionHandler",
+        methods = { send_access_restriction_req = nop, send_access_restriction_notify = nop, on_player_cheat_state_notify = nop }
+    },
+    _G_GodzillaBanHandler = {
+        table = "_G.GodzillaBanHandler",
+        methods = { send_godzilla_ban_req = nop, send_godzilla_unban_req = nop }
+    },
+    _G_logic_deleteaccount = {
+        table = "_G.logic_deleteaccount",
+        retvals = { ForceDeleteAccount = retFalse },
+        methods = { OnReceiveDeleteNotify = nop }
+    },
+    _G_compliance_util = { table = "_G.compliance_util", methods = { CheckCompliance = nop } },
+    ["GameLua.Mod.BaseMod.Client.Security.ClientReportPlayerSubsystem"] = {
+        methods = {
+            OnInit = nop, _OnPlayerKilledOtherPlayer = nop, _RecordFatalDamager = nop,
+            _OnDeathReplayDataWhenFatalDamaged = nop, _RecordMurdererFromDeathReplayData = nop,
+            _RecordTeammatePlayerInfo = nop, _OnBattleResult = nop, _OnShowQuickReportMutualExclusiveUI = nop,
+            GetFatalDamagerMap = retEmpty, GetCachedTeammateName2InfoMap = retEmpty,
+            GetTeammateName2InfoMapDuringBattle = retEmpty, GetCurrentNotInTeamHistoricalTeammateMap = retEmpty,
+            GetInTeamIndexFromHistoricalTeammateInfo = function() return -1 end,
+            ReportSuspiciousPlayer = nop, SubmitReport = nop, ProcessReport = nop,
+            ClientRPC_SyncFatalDamagerMap = nop,
+        },
+        custom = function(m)
+            if m.__inner_impl then
+                m.__inner_impl._OnSyncFatalDamage = nop
+                m.__inner_impl._OnPlayerKilledOtherPlayer = nop
+                m.__inner_impl._SyncBattleResult = nop
+            end
+        end,
+    },
+    ["GameLua.Mod.BaseMod.Common.Security.DSReportPlayerSubsystem"] = {
+        methods = {
+            OnInit = nop, _OnNearDeathOrRescued = nop, _OnCharacterDied = nop, _OnTeammateDamage = nop,
+            _OnPlayerSettlementStart = nop, _AddKnockDownerToBattleResult = nop, _AddKillerToBattleResult = nop,
+            _AddTeammateMurderToBattleResult = nop, _AddFatalDamagerMapToBattleResult = nop,
+            _AddMLKillerUIDToBattleResult = nop, _SaveHistoricalTeammateInfo = nop, _RecordFatalDamager = nop,
+            _RecordTeammateMurderer = nop,
+            _AddEnemyMapToBattleResult = nop, _AddTeammateMapToBattleResult = nop, _SubmitAbnormalData = nop,
+            _tUID2InfoMap = retEmpty, ds2history = retEmpty,
+        },
+    },
+    ["GameLua.Mod.BaseMod.Common.Security.ReportPlayerUtils"] = {
+        retvals = { GetBotType = retZero, IsCharacterDeliverAI = retFalse },
+        methods = { RecordFatalDamager = nop, IsUsingHistoricalTeammateInfo = retFalse },
+    },
+    ["GameLua.Mod.BaseMod.Common.Security.SecurityCommonUtils"] = {
+        methods = { ExtractPlayerBasicInfo = retEmpty, LogIf = retFalse },
+        custom = function(m)
+            if m.EStrategyTypeInReplay then
+                m.EStrategyTypeInReplay.EspTotalSimTraceCnt = 0
+                m.EStrategyTypeInReplay.EspTotalImeFocusCnt = 0
+                m.EStrategyTypeInReplay.ClientGravityAnomalyCount = 0
+                m.EStrategyTypeInReplay.FlyingErrorCnt = 0
+            end
+        end,
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.ClientQuickReportMaliciousTeammate"] = {
+        methods = { OnShowMutualExclusiveUI = nop, OnHideMutualExclusiveUI = nop,
+            MaliciousTeammateReceiveWarningTips = nop, MaliciousTeammateVictimReceiveTips = nop },
+    },
+    _G_ClientTlogHandler = { table = "_G.ClientTlogHandler", methods = { send_report_lobby_common_tlog = nop } },
+    _G_LoginAndWinTlogHandler = { table = "_G.LoginAndWinTlogHandler", methods = { on_cloud_game_event_notify = nop } },
+    _G_tlog_report_utils = { table = "_G.tlog_report_utils", methods = { ReportTLogEvent = nop, ReportImmediate = nop } },
+    _G_BasicDataTLogReport = {
+        table = "_G.BasicDataTLogReport",
+        methods = { OnSendBatchReqMsg = nop, OnImmediateReqMsg = nop, OnMergeReqMsg = nop, send_report_event_duration_log = nop, SendTlog = nop, ReportEvent = nop },
+        retvals = { _GetParamData = retEmpty }
+    },
+    _G_BasicDataClientReport = {
+        table = "_G.BasicDataClientReport",
+        methods = { ReportImmediate = nop, ReportDelay = nop, OnSendBatchReqMsg = nop, OnImmediateReqMsg = nop, OnMergeReqMsg = nop },
+        retvals = { _IsCanReport = retFalse }
+    },
+    _G_BasicDataReport = {
+        table = "_G.BasicDataReport",
+        methods = { ReportImmediate = nop, ReportDelay = nop, OnMergeReqMsg = nop, OnImmediateReqMsg = nop, OnSendBatchReqMsg = nop, _BatchReqMsg = nop }
+    },
+    _G_puffer_tlog = { table = "_G.puffer_tlog", methods = { report_download_tlog = nop } },
+    ["GameLua.Mod.BaseMod.DS.Security.ICTLogSubsystem"] = { methods = { SendICExceptionTLog = nop } },
+    ["GameLua.Mod.BaseMod.DS.Security.DSFightTLogSubsystem"] = {
+        methods = { ReportFightData = nop, ReportPlayerWeapon = nop },
+        retvals = { GetSimpleFightData = retEmpty }
+    },
+    ["GameLua.Mod.BaseMod.DS.Security.DSSecurityTLogSubsystem"] = {
+        methods = {
+            _OnReportServerJumpFlow = nop, _OnReportTeleportFlow = nop, _OnReportSpeedHackFlow = nop,
+            ReportServerJumpFlow = nop, CollectJumpData = nop,
+        },
+    },
+    ["GameLua.Mod.BaseMod.DS.Security.DSCommonTLogSubsystem"] = { methods = { HandleKillTlog = nop } },
+    _G_ClientErrorReportHandler = {
+        table = "_G.ClientErrorReportHandler",
+        methods = { send_client_error_report = nop, send_client_crash_report = nop, send_client_tools_batch_report_req = nop }
+    },
+    _G_BattleReportHandler = {
+        table = "_G.BattleReportHandler",
+        methods = {
+            send_battle_report = nop, send_battle_result = nop, send_vod_game_report_req = nop,
+            send_batch_get_vod_info_req = nop, send_get_game_report_req = nop, send_batch_get_game_report_req = nop,
+            send_get_game_report_by_uid_req = nop
+        }
+    },
+    _G_BugHandler = { table = "_G.BugHandler", methods = { send_report_bug_info = nop, send_report_bug_feedback = nop } },
+    _G_LobbyPingReportHandler = { table = "_G.LobbyPingReportHandler", methods = { send_lobby_ping_report = nop, send_ingame_ping_report = nop } },
+    _G_WeekRportHandler = { table = "_G.WeekRportHandler", methods = { send_week_report = nop, send_week_detail = nop } },
+    _G_logic_complaint = {
+        table = "_G.logic_complaint",
+        methods = { SendComplaintReq = nop, Submit = nop, ReportPlayer = nop, ShowComplaint = nop, ShowHandle = nop }
+    },
+    ["GameLua.Mod.BaseMod.Client.BattleResult.ProcessBase.EscapeBattleResultShowOBResultLogic"] = {
+        methods = { OnBattleResult = nop, OnResultProcessStart = nop }
+    },
+    ["GameLua.Mod.BaseMod.Client.BattleResult.ProcessBase.BattleResultShowOBResultLogic"] = {
+        methods = { OnBattleResult = nop, OnResultProcessStart = nop }
+    },
+    ["GameLua.Mod.BaseMod.Client.BattleResult.ProcessBase.BattleResultShowResultLogic"] = {
+        methods = {
+            OnBattleResult = nop, OnResultProcessStart = nop, OnResultProcessContinue = nop,
+            ReceiveData = nop, SendEndFlow = nop, OnReport = nop, ShowResult = nop, ShowResultInternal = nop,
+            StopResultProcess = nop
+        }
+    },
+    _G_EmulatorHandler = { table = "_G.EmulatorHandler", methods = { send_emulator_info = nop } },
+    _G_emulator_scanner = {
+        table = "_G.emulator_scanner",
+        methods = { StartScan = nop, ReportScanResult = nop },
+        retvals = { GetScanResult = retFalse }
+    },
+    _G_LoginVerifyHandler = { table = "_G.LoginVerifyHandler", methods = { send_login_verify_req = nop, send_device_verify_req = nop } },
+    _G_logic_ds_monitor = { table = "_G.logic_ds_monitor", methods = { OnRecordMsg = nop, OnReportMsg = nop } },
+    ["GameLua.Mod.BaseMod.Client.Security.ClientDataStatistcsSubsystem"] = {
+        methods = { StartToCheck = nop, OnReceiveRTT = nop, OnReceiveJitter = nop, ReportAbnormal = nop, ResetData = nop }
+    },
+    ["GameLua.Dev.Subsystem.ShootVerifySubSystemClient"] = { methods = { OnShootVerifyFailed = nop, SendVerifyData = nop } },
+    ["GameLua.Mod.BaseMod.DS.Security.HighlightMomentSubsystem_DSChecker"] = { methods = { CheckFuncUpgradedWeaponKill = nop } },
+    _G_logic_chat_voice_report = { table = "_G.logic_chat_voice_report", methods = { ReportVoiceData = nop, ReportVoiceText = nop } },
+    _G_logic_chat_voice_doctor = { table = "_G.logic_chat_voice_doctor", methods = { UploadVoiceLog = nop, UploadVoiceException = nop } },
+    _G_logic_home_audit_state = { table = "_G.logic_home_audit_state", methods = { SendAuditState = nop, ReportAuditResult = nop } },
+    _G_logic_home_report = { table = "_G.logic_home_report", methods = { ReportHomeData = nop, ReportHomeVisitor = nop, ShowInGameReportUI = nop, SendReport = nop } },
+    _G_gem_report_utils = {
+        table = "_G.gem_report_utils",
+        methods = { ReportGemData = nop, ReportGemPurchase = nop, ReportEventImmediate = nop },
+    },
+    _G_ChatHandler = { table = "_G.ChatHandler", methods = { send_report_info = nop, send_report_info_mic = nop } },
+    _G_ClientReplayDataReporter = { table = "_G.ClientReplayDataReporter", methods = { ReportIntArrayData = nop, ReportFloatArrayData = nop, ReportUInt8ArrayData = nop } },
+    ["GameLua.ExtraModule.MLAI.Client.AIReplaySubsystem"] = {
+        custom = function(m)
+            if m.uCompletePlayBack then
+                m.uCompletePlayBack.AddRecordMLAIInfo = nop
+                m.uCompletePlayBack.StopRecording = nop
+            end
+            if m.ReportAllPlayerInfo then m.ReportAllPlayerInfo = nop end
+            if m.ReportFrameData then m.ReportFrameData = nop end
+            if m.ReportPlayerInput then m.ReportPlayerInput = nop end
+        end,
+    },
+    _G_GameSafeCallbacks = {
+        table = "_G.GameSafeCallbacks",
+        methods = {
+            PostPlayerControllerLoginInit = nop, OnDSGlueHiaInit = nop, CharacterReceiveBeginPlay = nop,
+            DoAttackFlowStrategy = nop, RecordStrategyTimestampInReplay = nop, EditorIncreaseTotalStatisticCnt = nop
+        },
+        retvals = { GetScriptReportContent = function() return "" end }
+    },
+    ["GameLua.Mod.BaseMod.GamePlay.GameReport.GameReportUtils"] = {
+        methods = { ReportException = nop, ReplayReportData = nop, ReportGameException = nop },
+        retvals = { BugglyPostExceptionFull = retFalse, CheckCanBugglyPostException = retFalse }
+    },
+    _G_NetUtil = { table = "_G.NetUtil", methods = { SendTss = nop, SendToServer = nop, SendToDS = nop } },
+    ["UnrealNet"] = {
+        global = true,
+        custom = function(m)
+            if not m then return end
+            if m.FilterNetworkException then
+                local o = m.FilterNetworkException
+                m.FilterNetworkException = function(et, em)
+                    if em and type(em) == "string" then
+                        local le = em:lower()
+                        if le:find("cheatdetected") or le:find("idipban") or le:find("dataerror") or le:find("datamismatch")
+                           or le:find("security") or le:find("integrity") or le:find("hashfail") or le:find("flag") then
+                            return false
+                        end
+                    end
+                    return o(et, em)
+                end
+            end
+            m.HandleNetworkExceptionReport = nop
+            m.HandleNetworkConnectionClosed = nop
+            m.HandleSpectateException = nop
+        end
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.Gokuba"] = {
+        custom = function(m)
+            if m.ForwardFeature then
+                m.ForwardFeature = function() return {0, 0, 0, 0, 0} end
+            end
+            if m.TimerHandle then
+                pcall(function()
+                    local time_ticker = require("common.time_ticker")
+                    time_ticker.RemoveTimer(m.TimerHandle)
+                end)
+                m.TimerHandle = nil
+            end
+        end
+    },
+    ["GameLua.Mod.BaseMod.Common.Security.CoronaUploader"] = { methods = { Upload = nop, Flush = nop } },
+    ["GameLua.Mod.BaseMod.Client.Login.LoginLock"] = { methods = { Lock = nop, OnLoginBan = nop }, retvals = { CheckBan = retFalse } },
+    ["GameLua.Mod.BaseMod.GamePlay.Battle.BattleResultUploader"] = { methods = { Upload = nop } },
+    ["client.slua.logic.ClientAppStat"] = { methods = { Report = nop, Flush = nop } },
+    ["GameLua.Mod.BaseMod.Client.Security.DeviceFingerprint"] = {
+        methods = { Collect = nop, Sync = nop, GetHash = function() return "unknown" end }
+    },
+    ["GameLua.Mod.BaseMod.DS.Security.DSDeviceCheck"] = { methods = { VerifyClientDevice = retTrue, ReportMismatch = nop } },
+    ["GameLua.Mod.BaseMod.Common.Security.IntegrityCheck"] = { methods = { Run = nop, Verify = retTrue } },
+    ["GameLua.Mod.BaseMod.Common.Security.APKIntegrity"] = { methods = { CheckSignature = retTrue, CheckInstallSource = retTrue } },
+    ["GameLua.Mod.BaseMod.Common.Security.LibCheck"] = {
+        methods = { Verify = retTrue, Check = retTrue, Scan = nop, Report = nop },
+        retvals = { IsLibValid = retTrue, GetTamperedLibs = retEmpty }
+    },
+    _G_TDataMaster = {
+        table = "_G.TDataMaster",
+        methods = { Report = nop, ReportDeviceInfo = nop, SendHardwareHash = nop, CollectTelemetry = nop, SendData = nop, Sync = nop, Flush = nop },
+        custom = function(m)
+            if m then for k, v in pairs(m) do if type(v) == "function" then m[k] = nop end end end
+        end,
+    },
+    _G_DeviceInfo = {
+        table = "_G.DeviceInfo",
+        methods = { GetDeviceID = function() return "unknown" end, GetIMEI = function() return "000000000000000" end, CollectSysInfo = nop }
+    },
+    ["client.slua.logic.platform.platform_db"] = { methods = { Scan = nop, CheckIntegrity = retFalse, ReportCorruption = nop } },
+    ["xunyou_cache_scan"] = { methods = { StartScan = nop, GetResult = retEmpty } },
+    _G_SecurityTlogQueue = { table = "_G.SecurityTlogQueue", methods = { Flush = nop, Add = nop } },
+    _G_PufferDownloadReport = { table = "_G.PufferDownloadReport", methods = { ReportDownload = nop, ReportError = nop } },
+    _G_ReplayRecordSecurity = { table = "_G.ReplayRecordSecurity", methods = { InjectMeta = nop, Validate = nop } },
+    _G_GameServerHeartbeat = { table = "_G.GameServerHeartbeat", methods = { ReportMissedBeat = nop, CheckAlive = retTrue } },
+    ["GameLua.Mod.BaseMod.Common.Security.AntiDebug"] = { methods = { Check = retFalse, Report = nop } },
+    ["GameLua.Mod.BaseMod.Client.Security.SecureBootCheck"] = { methods = { VerifyBoot = retTrue } },
+    ["GameLua.Mod.BaseMod.DS.Security.DSPlayerValidCheck"] = { methods = { Validate = retTrue, ReportSuspicious = nop } },
+    ["client.slua.logic.common.logic_common_legal_msg"] = {
+        custom = function(m)
+            if m.ShowOnePopUI then
+                local o = m.ShowOnePopUI
+                m.ShowOnePopUI = function(self, params)
+                    if params and params.title and params.title:find("SECURITY") then return end
+                    return o(self, params)
+                end
+            end
+        end,
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.InspectionSystemReportClientLogicSubsystem"] = {
+        methods = {
+            AskForInspector = nop, ReportEnemy = nop, KickOutOneTeam = nop,
+            OnReceiveInspectCmd = nop, ClientReportData = nop, SendReportToInspector = nop,
+            SendKickOutOneTeam = nop, ClientNotifyInspectorImplementation = nop, RecvNotifyInspector = nop,
+        },
+    },
+    ["GameLua.Mod.BaseMod.DS.Security.InspectionSystemReportDSLogicSubsystem"] = {
+        methods = {
+            ServerKickOutOneTeamByPlayerImplementation = nop, AddReportedCount = nop,
+            AddInspectionRecord = nop, BanPlayerByInspection = nop,
+            BroadCastToAllInspector = nop, ServerReportToInspectorImplementation = nop,
+            InitPlayerInspectionInfo = nop,
+        },
+        fields = { MAX_ASK_FOR_INSPECTOR_TIME = 0, ASK_FOR_INSPECTOR_INTERVAL = 99999 },
+        custom = function(m)
+            if m.__inner_impl then
+                m.__inner_impl.IsGameModeAllowed = retTrue
+            end
+        end,
+    },
+    ["client.slua.logic.CustomerService.LogicSafeStation"] = {
+        methods = { UploadVideoEvidence = nop, ReportPlayerBehavior = nop },
+    },
+    ["client.slua.logic.CustomerService.LogicCustomerService"] = {
+        methods = { SendComplaint = nop, SendFeedback = nop },
+    },
+    ["GameLua.GameCore.Module.Vehicle.VehicleFeatures.TLog.AmphibiousBoatTLogFeature"] = {
+        methods = { RecordMovement = nop, StartRecordMovement = nop },
+    },
+    ["client.logic.data.profile_report_cfg"] = { methods = { SendReport = nop } },
+    ["GameLua.Mod.BaseMod.Client.ClientInGameCreditLogic"] = {
+        methods = {
+            _SendUserReaction2ExitTeamBeforeBoardingReturnLobbyNotice = nop,
+            ShowReturnLobbyIfFirstExitTeamBeforeBoarding = retFalse,
+            OnReceiveCreditScoreChange = nop,
+            _IsFirstExitTeamBeforeBoardingReturnLobbyNoticeEnabled = retFalse,
+            SetFirstExitTeamBeforeBoardingReturnLobbyNoticeEnabled = nop,
+        },
+    },
+    ["GameLua.Mod.CreativeBase.Gameplay.Subsystem.CreativeDevDebugSubsystem"] = { methods = { IsDebugPanelEnalbedCli = nop } },
+    ["GameLua.Mod.CreativeBase.Gameplay.Subsystem.CreativeModeDeathRecordSubsystem"] = { methods = { OnPlayerKilled = nop } },
+    ["GameLua.Mod.BaseMod.DS.Security.AFKReportorSubsystem"] = {
+        methods = {
+            HandleEnterFighting = nop, InitializePlayerInputInfo = nop,
+            AddOneAFKInfo = nop, SetPlayerAFKState = nop,
+            ResetPlayerInputInfo = nop, PlayerHaveAction = nop, ReportAFK = nop,
+            CheckAFK = retFalse,
+        },
+    },
+    ["GameLua.Mod.TDM.Gameplay.Subsystem.TDMAFKReportorSubsystem"] = { methods = { SendAFKTips = nop, OnHandleLostConnection = nop } },
+    ["GameLua.Mod.BaseMod.GamePlay.AI.AITrackingLogSubsystem"] = {
+        methods = {
+            RealLogoutTimer = nop, AddToLogQue = nop, DoPrint = nop,
+            OnAIPawnDied = nop, OnAIPawnReceiveDamage = nop, OnAIPawnEnemyChange = nop,
+        },
+        fields = { LogQueue = {} },
+    },
+    ["client.slua.logic.data.data_mgr"] = { retvals = { GetWeaponSkinSoundVolumeInfoByGroup = retZero } },
+    ["TApmHelper"] = { methods = { postEvent = nop } },
+    ["GameLua.Mod.BaseMod.Common.Security.LuaIntegrityCheck"] = { methods = { Run = nop, Verify = retTrue, Check = retTrue } },
+    ["GameLua.Mod.BaseMod.Client.Security.ClientDeviceCheckSubsystem"] = {
+        methods = { StartCheck = nop, ReportResult = nop },
+        retvals = { IsDeviceSafe = retTrue },
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.SpectatorAndReplaySubsystem"] = { methods = { SendReport = nop } },
+    ["client.slua.logic.login.logic_version_update"] = {
+        methods = { CheckVersion = nop, CheckUpdate = nop, IsNeedUpdate = retFalse, GetVersion = function() return "4.4.0" end, ShowUpdateDialog = nop }
+    },
+    ["client.slua.logic.version.logic_update"] = { methods = { CheckUpdate = nop, ForceUpdate = nop, IsForceUpdate = retFalse } },
+    ["client.slua.logic.ban.logic_ban"] = {
+        methods = { GetBanEndTime = function() return 0 end, IsInBanTime = retFalse, CheckBanStatus = retFalse, GetBanReason = retEmpty, GetBanTime = retZero }
+    },
+    ["client.slua.logic.login.logic_login_ban"] = {
+        methods = { CheckCanLogin = retTrue, GetBanInfo = function() return { end_time = 0 } end, IsBanned = retFalse, IsSecurityBan = retFalse }
+    },
+    ["GameLua.Mod.PlanBT.Gameplay.Subsystem.DSActiveSubsystem"] = { methods = { DelayKickOutPlayer = nop, ActiveKickNotify = nop } },
+    ["GameLua.Mod.BaseMod.Client.Security.ClientFlagSubsystem"] = {
+        methods = {
+            EvaluateFlags = nop,
+            GetFlagLevel = retZero,
+            GetFlagBanDuration = retZero,
+            IsFlagged = retFalse,
+            ReportFlag = nop,
+            SyncFlagStatus = nop,
+            IncreaseFlagCount = nop,
+            ResetFlags = nop,
+        },
+        retvals = { IsFlagged = retFalse },
+        fields = { FlagCount = 0, FlagLevel = 0, FlagSeverity = 0 },
+    },
+    ["client.slua.logic.ban.logic_flag_ban"] = {
+        methods = {
+            GetFlagBanEndTime = function() return 0 end,
+            IsFlagBanned = retFalse,
+            GetFlagBanDuration = retZero,
+            CheckFlagBan = retFalse,
+        }
+    },
+    ["GameLua.Mod.BaseMod.DS.Security.DSAITLogSubsystem"] = {
+        methods = { _UpdateTTKRecords = nop, _UpdateOperatingFrequency = nop }
+    },
+    ["GameLua.Mod.Borderland.Gameplay.Subsystem.TLogSubsystem"] = { methods = { OnInit = nop } },
+    _G_TLogSubsystem = { table = "_G.TLogSubsystem", methods = { OnInit = nop } },
+    ["client.slua.logic.download.report.logic_mini_pak_gem"] = {
+        methods = { StartReport = nop, ReportGemLog = nop, SetCurDownloadSize = nop }
+    },
+    ["GameLua.Mod.BaseMod.Client.ClientTLog.ClientTLogManager"] = {
+        methods = {
+            OnReceiveBattleResults = nop,
+            AddValTLog = nop,
+            SetValTLog = nop,
+            SendReportLobby = nop,
+        },
+        fields = { ClientTlogData = {} },
+    },
+    ["GameLua.Mod.SocialIsland.DS.Battle.RacingAntiCheatLogic"] = {
+        methods = {
+            StartDetectTimer = nop, StopDetectTimer = nop,
+            DetectVehicleFloating = nop, HandleFloatingCheat = nop,
+            HandleSpeedCheat = nop, HandlePlayerPassCheckBelt = nop,
+        },
+    },
+    ["GameLua.Dev.ClientCloudGM"] = { methods = { HandleCloudGMCMDStr = nop } },
+    ["GameLua.Mod.BaseMod.Client.Dev.ClientCloudGM"] = { methods = { HandleCloudGMCMDStr = nop } },
+    ["GameLua.Mod.BaseMod.Common.RealTimeBan.RealTimeBan"] = {
+        methods = {
+            OnPlayerWithRealTimeBan = nop,
+            ShowAlias = nop,
+            HandleEnterGameModeFightingState = nop,
+            GetTipsID = retZero,
+        },
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.HawkEyeSpectate.HawkEyeDistanceUI"] = {
+        methods = { _RefreshUI = nop, _IsShouldShow = retFalse }
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.HawkEyeSpectate.HawkEyeNextPatrolWindow"] = {
+        methods = { OnShow = nop }
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.HawkEyeSpectate.HawkEyeReportWindow"] = {
+        methods = { _OnClickSubmit = nop, _RefreshWindow = nop, RegistEvents = nop }
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.SecurityClientUtils"] = {
+        methods = {
+            HasOtherTeammateOffline = retFalse,
+            HasOtherHealthyOnlineTeammate = retFalse,
+            IsMyHealthStatusHealthy = retTrue,
+            IsMyHealthStatusAlive = retTrue,
+            GetMyHealthStatus = function() return 1 end,
+        }
+    },
+    ["GameLua.Mod.BaseMod.Client.Ban.ClientBanLogic"] = {
+        methods = {
+            OnVoiceBanNotify = nop, OnRealTimeVoiceBanNotify = nop,
+            OnSyncBanInfo = nop, OnNotifyWarningTips = nop,
+            VoiceBanEndTime = 0, bEnableVoiceReport = false,
+        },
+    },
+    ["GameLua.Mod.BaseMod.Client.Security.ClientBanLogic"] = {
+        methods = {
+            OnVoiceBanNotify = nop, OnRealTimeVoiceBanNotify = nop,
+            OnSyncBanInfo = nop, OnNotifyWarningTips = nop,
+        },
+    },
+    ["ScreenshotMaker"] = {
+        custom = function(m)
+            if not m then return end
+            m.MakePicture = function() return "" end
+            m.ReMakePicture = function() return "" end
+            m.HasCaptured = function() return true end
+        end,
+    },
+    ["client.slua.logic.ugc.UGCNewTLogReport"] = {
+        methods = { SendExposeReq = nop, SendInteractionReq = nop, TLogReport = nop }
+    },
+    ["client.slua.logic.ugc.logic_ugc_tlog"] = {
+        methods = { SendModTLog = nop, ReportStay = nop }
+    },
+    ["GameLua.Mod.BaseMod.Client.ClientTLog.ClientTLogUtil"] = {
+        methods = { ReportGeneralCountByBRPhase = nop, ReportCommonTLogDataByBRPhase = nop }
+    },
+    ["ReportCrashKitFeature"] = {
+        custom = function(m) if m and m.ReportCharacterAttachedOnVehicleException then m.ReportCharacterAttachedOnVehicleException = nop end end,
+    },
+    ["GameLua.Mod.BaseMod.GamePlay.GameReport.GameReportSubsystemReporter"] = {
+        custom = function(m)
+            if m then
+                m.ReportIntArrayData = nop
+                m.ReportUInt8ArrayData = nop
+                m.ReportFloatArrayData = nop
+            end
+        end,
+    },
+    -- Extra patches
+    ["SkillAction_GrenadeThrowReport"] = {
+        methods = {
+            ReportGrenadeThrow = nop,
+            CheckGrenadeAnimationState = retTrue,
+            ValidateThrow = retTrue,
+            OnGrenadeThrow = nop,
+        },
+    },
+    ["BanMacro"] = {
+        methods = {
+            DetectInputVariance = retTrue,
+            CheckClickTiming = retFalse,
+            AnalyzeClickPattern = retEmpty,
+            ReportMacro = nop,
+            CheckAllBanTypes = retTrue,
+        },
+    },
+    ["NGActionBanSprint"] = {
+        methods = {
+            ValidateSprintSpeed = retTrue,
+            CheckSpeedHack = retFalse,
+            ReportSprintViolation = nop,
+        },
+    },
+    ["ReportGrenadeThrow"] = {
+        methods = {
+            SendGrenadeReport = nop,
+            ReportGrenadeData = nop,
+        },
+    },
+    ["InputVarianceChecker"] = {
+        methods = {
+            CalculateVariance = retZero,
+            IsHumanLike = retTrue,
+        },
+    },
+    ["SpeedhackValidator"] = {
+        methods = {
+            ValidateSpeed = retTrue,
+            IsSpeedhack = retFalse,
+            ReportSpeedhack = nop,
+        },
+    },
+    ["HawkEyeSpectatorState"] = {
+        methods = {
+            OnSpectatorStateChange = nop,
+            TrackAimMovement = nop,
+            ReportSuspiciousAim = nop,
+        },
+    },
+    ["EmulatorSystem"] = {
+        fields = { EmulatorTestMark = true },
+        methods = { IsEmulator = retFalse, GetEmulatorName = function() return "NoEmulator" end },
+    },
+    ["logic_emulator"] = {
+        methods = { find_emulator = retFalse, IsSpecialEmulator = retFalse },
+    },
+    ["VoiceReportSubsystem"] = {
+        methods = {
+            PLAYER_BAN_GLOBAL_MI = nop,
+            ReportSuspicious = nop,
+            PreFilterAI = nop,
+        },
+    },
+    ["BugglyReportRecord"] = {
+        methods = { Report = nop, Record = nop },
+        retvals = { GetProbability = retZero },
+    },
+    ["PatrollerModule"] = {
+        methods = { UpdateStats = nop, GetRank = retZero, AddInspectionRecord = nop },
+    },
+    ["DSQuickReportMaliciousTeammate"] = {
+        methods = {
+            _HandleCarrybackFallingDamage = nop,
+            _HandleGrenadeDamage = nop,
+            _HandleVehicleExplosionDamage = nop,
+            ReportMaliciousTeammate = nop,
+        },
+    },
+    ["ClientQuickReportMaliciousTeammate"] = {
+        methods = {
+            RPC_Client_MaliciousTeammateReceiveWarningTips = nop,
+            ShowQuickReportDialog = nop,
+            OnDeath = nop,
+        },
+    },
+    ["InspectionSystemKickPlayerConfirm"] = {
+        methods = {
+            OnConfirmTyped = retTrue,
+            CheckConfirmText = retTrue,
+        },
+    },
+    ["RockBandActor"] = {
+        custom = function(m)
+            if m then
+                m._G.IsEditor = false
+                m._G.IsTesting = false
+            end
+        end,
+    },
+    ["ban_reddot_system"] = {
+        methods = {
+            EnterSafeStation = nop,
+            UpdateRedDot = nop,
+            OnBanUpdate = nop,
+        },
+    },
+    ["ban_reddot_data"] = {
+        methods = {
+            LoadBanRedDotData = nop,
+            UpdateBanRedDot = nop,
+        },
+    },
+    ["DSPlayerDataReportSubsystem"] = {
+        methods = {
+            TrackRescue = nop,
+            TrackDieWithoutRevive = nop,
+            HandleBattleResult = nop,
+            _HandleRescue = nop,
+            _HandleDieWithoutRevive = nop,
+        },
+        custom = function(m)
+            if m then
+                m.DieWithoutReviveTime = 99999
+                if m._OnGameEnd then m._OnGameEnd = nop end
+            end
+        end,
+    },
+    ["UGC_AiCopilot_Report"] = {
+        methods = {
+            ReportContent = nop,
+            ReportLowQuality = nop,
+            SendReport = nop,
+        },
+    },
+    ["gem_report_utils"] = {
+        methods = {
+            ReportEventDelay = nop,
+            ReportImmediate = nop,
+        },
+    },
+    ["gem_report_config"] = {
+        methods = {
+            OnNetworkEvent = nop,
+            OnBanEvent = nop,
+        },
+    },
+    ["net"] = {
+        global = true,
+        custom = function(m)
+            if m then
+                m.DumpPropertySerializationStats = nop
+            end
+        end,
+    },
+}
+
+-- Hook require/import
+local originalRequire = require
+local function hookedRequire(name)
+    local mod = originalRequire(name)
+    if modulePatches[name] then
+        local cfg = modulePatches[name]
+        if cfg.custom then pcall(cfg.custom, mod)
+        elseif not cfg.global then
+            if cfg.methods then for k, v in pairs(cfg.methods) do if type(mod[k]) == "function" then mod[k] = v end end end
+            if cfg.retvals then for k, v in pairs(cfg.retvals) do if type(mod[k]) == "function" then mod[k] = v end end end
+            if cfg.fields then for k, v in pairs(cfg.fields) do if mod[k] ~= nil then mod[k] = v end end end
+        end
+    end
+    return mod
+end
+if require ~= hookedRequire then require = hookedRequire end
+
+local originalImport = import
+local function hookedImport(name)
+    local mod = originalImport(name)
+    if modulePatches[name] then
+        local cfg = modulePatches[name]
+        if cfg.custom then pcall(cfg.custom, mod)
+        elseif not cfg.global then
+            if cfg.methods then for k, v in pairs(cfg.methods) do if type(mod[k]) == "function" then mod[k] = v end end end
+            if cfg.retvals then for k, v in pairs(cfg.retvals) do if type(mod[k]) == "function" then mod[k] = v end end end
+            if cfg.fields then for k, v in pairs(cfg.fields) do if mod[k] ~= nil then mod[k] = v end end end
+        end
+    end
+    return mod
+end
+if import ~= hookedImport then import = hookedImport end
+
+-- ============================================================
+-- PART 2: ADITYA_ORG "EXTRA SAFETY" MODULES
+-- ============================================================
+
+-- Domain Blocker
 local blockedDomains = {
     "tss.tencent","syzsdk","gcloud.qq","reportlog","tdos","logupload","feedback.wh","crash2",
     "privacy.qq","privacy.tencent","oth.eve","mdt.qq","act.tencentyun","analytics","report.qq",
@@ -150,444 +949,7 @@ local function InitDomainBlocker()
     end)
 end
 
--- ============================================================
--- MODULE 2: SKIN BYPASS
--- ============================================================
-local function InitSkinBypass()
-    pcall(function()
-        local puf = package.loaded["client.slua.logic.download.report.puffer_tlog"]
-        if puf then
-            puf.ReportEvent = nop
-            puf.ReportDownloadResult = nop
-            puf.ReportODPTDError = nop
-        end
-        local au = package.loaded["AvatarUtils"]
-        if au then
-            au.CheckIsWeaponInBlackList = nopfalse
-            au.IsValidAvatar = noptrue
-        end
-        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
-        local fcs = sm and sm:Get("FileCheckSubsystem")
-        if fcs then
-            fcs.StartCheck = nop
-            fcs.ReportAbnormalFile = nop
-        end
-        local ee = package.loaded["client.slua.logic.report.EquipmentExceptionReport"]
-        if ee then
-            ee.Report = nop
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 3: TSS + SDK BLOCKER
--- ============================================================
-local function InitTssBlocker()
-    pcall(function()
-        local tss = package.loaded["TssSdk"] or _G.TssSdk
-        if tss then
-            if tss.OnRecvData then tss.OnRecvData = nop end
-            if tss.SendReportInfo then tss.SendReportInfo = nop end
-            if tss.ReportData then tss.ReportData = nop end
-            tss.ScanMemory = noptrue
-            tss.IsEmulator = nopfalse
-            tss.GetTssSdkReportInfo = nopstr
-        end
-        local beacon = package.loaded["BeaconSDK"] or _G.BeaconSDK
-        if beacon then
-            beacon.Report = nop
-            beacon.ReportEvent = nop
-            beacon.ReportData = nop
-        end
-        local bugly = package.loaded["BuglySDK"] or _G.BuglySDK
-        if bugly then
-            bugly.ReportException = nop
-            bugly.ReportError = nop
-            bugly.SetUserData = nop
-        end
-        local helpshift = package.loaded["HelpShift"] or _G.HelpShift
-        if helpshift then
-            helpshift.Report = nop
-            helpshift.SendFeedback = nop
-            helpshift.ReportUser = nop
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 4: LOG BLOCKER
--- ============================================================
-local function InitLogBlocker()
-    pcall(function()
-        local ssm = import("ScreenshotMTDer")
-        if ssm then
-            ssm.MTDePicture = nopstr
-            ssm.ReMTDePicture = nopstr
-            ssm.HasCaptured = noptrue
-        end
-        local tlog = package.loaded["TLog"] or _G.TLog
-        if tlog then
-            for _, f in ipairs({"Info","Warning","Error","Debug","Report"}) do
-                if tlog[f] then tlog[f] = nop end
-            end
-        end
-        local cs = package.loaded["CrashSight"] or _G.CrashSight
-        if cs then
-            cs.ReportException = nop
-            cs.SetCustomData = nop
-            cs.Log = nop
-        end
-        local gru = package.loaded["GameLua.Mod.BaseMod.GamePlay.GameReport.GameReportUtils"]
-        if gru then
-            gru.BugglyPostExceptionFull = nopfalse
-            gru.CheckCanBugglyPostException = nopfalse
-            gru.ReplayReportData = nop
-            gru.ReportGameException = nop
-        end
-        local ctr = package.loaded["client.slua.logic.report.ClientToolsReport"]
-        if ctr then
-            ctr.SendReport = nop
-            ctr.SendException = nop
-        end
-        local tru = package.loaded["client.slua.config.tlog.tlog_report_utils"]
-        if tru then
-            tru.ReportTLogEvent = nop
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 5: SCANNER BLOCKER
--- ============================================================
-local function InitScannerBlocker()
-    pcall(function()
-        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
-        if sm then
-            local afk = sm:Get("AFKReportorSubsystem")
-            if afk then
-                afk.PlayerHaveAction = nop
-                afk.ReportAFK = nop
-            end
-            local ds = sm:Get("ClientDataStatistcsSubsystem")
-            if ds then
-                ds.StartToCheck = nop
-                ds.DelayCount = 0
-                if ds.ReportPingDelayTimer then
-                    ds:RemoveGameTimer(ds.ReportPingDelayTimer)
-                    ds.ReportPingDelayTimer = nil
-                end
-            end
-            local ae = sm:Get("AvatarExceptionSubsystem")
-            if ae then
-                ae.ReportException = nop
-                ae.BindPlayerCharacter = nop
-                ae.CheckAvatarValid = noptrue
-            end
-            local sv = sm:Get("ShootVerifySubSystemClient")
-            if sv then
-                sv.ReportVerifyFail = nop
-                sv.OnVerifyFailed = nop
-            end
-        end
-        local cmbl = import("CreativeModeBlueprintLibrary")
-        if cmbl then
-            cmbl.MD5HashByteArray = function() return "BYPASSED" end
-            cmbl.GetContentDiffData = function() return true, "BYPASSED" end
-        end
-        local aepi = package.loaded["GameLua.Mod.Library.GamePlay.Avatar.Exception.AvatarExceptionPlayerInst"]
-        if aepi then
-            aepi.CheckAvatarException = nop
-            aepi.CheckAvatarExceptionOnce = nop
-            aepi.ReportAvatarException = nop
-            aepi.CheckSlotMeshVisible = nopfalse
-            aepi.CheckPawnVisible = nopfalse
-            aepi.CheckCanBugglyPostException = nopfalse
-        end
-        local acm = package.loaded["blacklist.slua.logic.lobby_gm.AvatarCheckerModule"]
-        if acm then
-            acm.CheckAvatar = noptrue
-            acm.ReportException = nop
-        end
-        local lmw = package.loaded["client.slua.logic.memory_warning.logic_memory_warning"]
-        if lmw then
-            lmw.OnMemoryWarning = nop
-            lmw.ReportMemoryWarning = nop
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 6: REPLAY TELEMETRY BLOCKER
--- ============================================================
-local function InitReplayBlocker()
-    pcall(function()
-        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
-        if sm then
-            local rbrt = sm:Get("RescueBtnReplayTraceSubsystem")
-            if rbrt then
-                rbrt.ReportTrace = nop
-                rbrt.StartTickMonitor = nop
-                rbrt.TickMonitorCheck = nop
-                rbrt.ReportTickMonitorHeartbeat = nop
-            end
-            local grs = sm:Get("GameReportSubsystem")
-            if grs then
-                grs.ReplayReportData = nopfalse
-                grs.CheckCanBugglyPostException = nopfalse
-                grs.BugglyPostExceptionFull = nopfalse
-                grs.GetClientReplayDataReporter = nopnil
-                if grs.Reporter then
-                    for _, f in ipairs({"ReportIntArrayData","ReportUInt8ArrayData","ReportFloatArrayData"}) do
-                        if grs.Reporter[f] then grs.Reporter[f] = nop end
-                    end
-                end
-            end
-        end
-        local lrr = package.loaded["client.slua.logic.replay.logic_report_replay"]
-        if lrr then
-            lrr.ReportReplay = nop
-            lrr.SendReportReq = nop
-        end
-        local lhr = package.loaded["client.slua.logic.home.logic_home_report"]
-        if lhr then
-            lhr.ShowInGameReportUI = nop
-            lhr.SendReport = nop
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 7: ANTI-REPORT SYSTEM
--- ============================================================
-local function InitAntiReport()
-    pcall(function()
-        local paths = {
-            "GameLua.Mod.BaseMod.Client.Security.ClientReportPlayerSubsystem",
-            "Client.Security.ClientReportPlayerSubsystem"
-        }
-        local crp = nil
-        for _, p in ipairs(paths) do
-            if package.loaded[p] then
-                crp = package.loaded[p]
-                break
-            end
-            local ok, m = pcall(require, p)
-            if ok and m then
-                crp = m
-                break
-            end
-        end
-        if crp then
-            local funcs = {
-                "OnInit","_OnPlayerKilledOtherPlayer","_RecordFatalDamager",
-                "_OnDeathReplayDataWhenFatalDamaged","_RecordMurdererFromDeathReplayData",
-                "_RecordTeammatePlayerInfo","_OnBattleResult",
-                "_OnShowQuickReportMutualExclusiveUI"
-            }
-            for _, f in ipairs(funcs) do
-                if crp[f] then crp[f] = nop end
-            end
-            crp.GetFatalDamagerMap = nopt
-            crp.GetCachedTeammateName2InfoMap = nopt
-            crp.GetTeammateName2InfoMapDuringBattle = nopt
-            crp.GetCurrentNotInTeamHistoricalTeammateMap = nopt
-            crp.GetInTeamIndexFromHistoricalTeammateInfo = function() return -1 end
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 8: GAMEPLAY BYPASS (DS State + Network Packets)
--- ============================================================
-local function InitGameplayBypass()
-    pcall(function()
-        if _G.GameplayCallbacks and not _G.GameplayCallbacks.IsBypassed then
-            local GC = _G.GameplayCallbacks
-            local orig = GC.OnDSPlayerStateChanged
-            GC.OnDSPlayerStateChanged = function(uid, state, ...)
-                if state and string.lower(tostring(state)) == "cheatdetected" then
-                    return
-                end
-                if orig then
-                    return orig(uid, state, ...)
-                end
-            end
-            local blocklist = {
-                "ReportAttackFlow","ReportSecAttackFlow","ReportHurtFlow",
-                "ReportFireArms","ReportVerifyInfoFlow","ReportMrpcsFlow",
-                "ReportPlayerBehavior","ReportTeammatHurt","ReportMisKillByTeammate",
-                "ReportForbitPick","ReportPlayerMoveRoute","ReportPlayerPosition",
-                "ReportVehicleMoveFlow","ReportSecTgameMovingFlow","ReportParachuteData",
-                "SendTssSdkAntiDataToLobby","SendDSErrorLogToLobby",
-                "SendDSErrorLogToLobbyOnece","SendDSHawkEyePatrolLogToLobby",
-                "ReportEquipmentFlow","ReportAimFlow",
-                "ReportHeavyWeaponBoxSpawnFlow","ReportHeavyWeaponBoxActivationFlow",
-                "ReportHeavyWeaponBoxOpenPlayerFlow","ReportHeavyWeaponBoxItemFlow",
-                "ReportPlayersPing","ReportPlayerIP","ReportPlayerFramePingRecord",
-                "OnDSConnectionSaturated","ReportDSNetSaturation",
-                "ReportNetContinuousSaturate","ReportDSNetRate",
-                "SendClientStats","SendServerAvgTickDelta",
-                "ReportCircleFlow","ReportDSCircleFlow","ReportJumpFlow",
-                "ReportAIStrategyInfo","SendAIDeliveryInfo","ReportDailyTaskInfo",
-                "ReportMatchRoomData","SendPlayerSpectatingLog",
-                "ReportIDCardProduceFlow","ReportIDCardPickUpFlow",
-                "ReportIDCardDestroyFlow","ReportRevivalFlow",
-                "ReportGameSetting","ReportGameSettingNew",
-                "ReportAntsVoiceTeamCreate","ReportAntsVoiceTeamQuit",
-                "ReportCommonInfo","ReportLightweightStat",
-                "SendSecTLog","SendDataMiningTLog","SendActivityTLog"
-            }
-            for _, f in ipairs(blocklist) do
-                if GC[f] then GC[f] = nop end
-            end
-            GC.GetWeaponReport = nopt
-            GC.GetOneWeaponReport = nopt
-            GC.GetGeneralTLogData = nopnil
-            GC.IsBypassed = true
-        end
-        if NetUtil and NetUtil.SendPacket and not NetUtil.IsBypassed then
-            local orig = NetUtil.SendPacket
-            local bp = {
-                ReportAttackFlow=1, ReportSecAttackFlow=1, ReportHurtFlow=1,
-                ReportFireArms=1, ReportVerifyInfoFlow=1, ReportMrpcsFlow=1,
-                ReportPlayerBehavior=1, ReportTeammatHurt=1,
-                on_tss_sdk_anti_data=1, report_parachute_data=1,
-                ReportAimFlow=1, ReportHitFlow=1,
-                ReportCircleFlow=1, ReportJumpFlow=1,
-                ReportGameStartFlow=1, ReportGameEndFlow=1,
-                report_players_ping=1, report_player_ip=1,
-                tss_sdk_report=1, report_memory_exception=1,
-                report_avatar_exception=1
-            }
-            NetUtil.SendPacket = function(n, ...)
-                if bp[n] then return end
-                return orig(n, ...)
-            end
-            NetUtil.IsBypassed = true
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 9: CONNECTION GUARD
--- ============================================================
-local function InitConnectionGuard()
-    pcall(function()
-        if _G.ConnectionGuardInitialized or not _G.GameplayCallbacks then
-            return
-        end
-        local GC = _G.GameplayCallbacks
-        local orig = GC.OnDSPlayerStateChanged
-        local blockedStates = {
-            cheatdetected = true,
-            connectionlost = true,
-            connectiontimeout = true,
-            connectionexception = true,
-            netdrivererror = true
-        }
-        GC.OnDSPlayerStateChanged = function(uid, state, ...)
-            local s = state and string.lower(tostring(state)) or ""
-            if blockedStates[s] then return end
-            if orig then pcall(orig, uid, state, ...) end
-        end
-        GC.OnPlayerNetConnectionClosed = nop
-        GC.OnPlayerActorChannelError = nop
-        GC.OnPlayerRPCValidateFailed = nop
-        GC.OnPlayerSpectateException = nop
-        GC.OnShutdownAfterError = nop
-        _G.ConnectionGuardInitialized = true
-    end)
-end
-
--- ============================================================
--- MODULE 10: HIGGS BOSON DISABLER
--- ============================================================
-local function InitHiggsBoson()
-    pcall(function()
-        local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
-        if pc and slua.isValid(pc) then
-            if pc.HiggsBoson then
-                pc.HiggsBoson.bMHActive = false
-                pc.HiggsBoson.bCallPreReplication = false
-            end
-            if pc.HiggsBosonComponent then
-                pc.HiggsBosonComponent.bMHActive = false
-                pc.HiggsBosonComponent:ControlMHActive(0)
-            end
-        end
-        local hbc = require("GameLua.Mod.BaseMod.Common.Security.HiggsBosonComponent")
-        if hbc then
-            if hbc.StaticShowSecurityAlertInDev then
-                hbc.StaticShowSecurityAlertInDev = nop
-            end
-            if hbc.BlackList then
-                for k in pairs(hbc.BlackList) do
-                    hbc.BlackList[k] = nil
-                end
-            end
-        end
-        if _G.AvatarCheckCallback then
-            _G.AvatarCheckCallback.StartAvatarCheck = nop
-            _G.AvatarCheckCallback.OnReportItemID = nop
-            _G.AvatarCheckCallback.PostPlayerControllerLoginInit = function(pc)
-                if slua.isValid(pc) and pc.HiggsBosonComponent then
-                    pc.HiggsBosonComponent:ControlMHActive(0)
-                    pc.HiggsBosonComponent.bMHActive = false
-                end
-            end
-        end
-        _G.BlackList = {}
-        if _G.GameSafeCallbacks then
-            if _G.GameSafeCallbacks.RecordStrategyTimestampInReplay then
-                _G.GameSafeCallbacks.RecordStrategyTimestampInReplay = nop
-            end
-            _G.GameSafeCallbacks.DoAttackFlowStrategy = nop
-            _G.GameSafeCallbacks.GetScriptReportContent = nopstr
-        end
-        local stebp = import("STExtraBlueprintFunctionLibrary")
-        if stebp then
-            stebp.IsDevelopment = nopfalse
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 11: ZR/PR BYPASSES
--- ============================================================
-local function InitZRPRBypasses()
-    pcall(function()
-        local STExtraLib = import("STExtraBlueprintFunctionLibrary")
-        if STExtraLib then
-            STExtraLib.IsDevelopment = noptrue
-        end
-        local hiaPath = "GameLua.Mod.BaseMod.Client.Security.ClientGlueHiaSystem"
-        local hia = package.loaded[hiaPath] or require(hiaPath)
-        if hia then
-            hia.CheckHitIntegrity = noptrue
-        end
-        local securityPath = "GameLua.Mod.BaseMod.Common.Security.SecurityNotifyPCFeature"
-        local security = package.loaded[securityPath] or require(securityPath)
-        if security then
-            security.ClientRPC_SyncBanID = nop
-            security.ClientRPC_StrongTips = nop
-            security.ClientRPC_NormalTips = nop
-        end
-        local dsFightPath = "GameLua.Mod.BaseMod.DS.Security.DSFightTLogSubsystem"
-        local dsFight = package.loaded[dsFightPath] or require(dsFightPath)
-        if dsFight then
-            dsFight.GetSimpleFightData = nopt
-        end
-        local dsReportPath = "GameLua.Mod.BaseMod.DS.Security.DSReportPlayerSubsystem"
-        local dsReport = package.loaded[dsReportPath] or require(dsReportPath)
-        if dsReport then
-            dsReport._AddEnemyMapToBattleResult = nop
-        end
-    end)
-end
-
--- ============================================================
--- MODULE 12: MEMORY BYPASS
--- ============================================================
+-- Memory & Print Bypass
 local function InitMemoryBypass()
     pcall(function()
         if not _G.old_print then
@@ -605,70 +967,152 @@ local function InitMemoryBypass()
     end)
 end
 
--- ============================================================
--- MODULE 13: INTEGRITY OVERRIDES
--- ============================================================
+-- Integrity Overrides
 local function InitIntegrityOverrides()
     pcall(function()
-        if Game and Game.CheckIntegrity then
-            Game.CheckIntegrity = noptrue
+        if Game and Game.CheckIntegrity then Game.CheckIntegrity = noptrue end
+        if slua and slua.check_integrity then slua.check_integrity = noptrue end
+        
+        local console = import("KismetSystemLibrary")
+        if console then
+            console.ExecuteConsoleCommand(nil, "pak.DisablePakSignatureCheck 1")
+            console.ExecuteConsoleCommand(nil, "security.DisableChecks 1")
         end
-        if slua and slua.check_integrity then
-            slua.check_integrity = noptrue
+        local CreativeLib = import("CreativeModeBlueprintLibrary")
+        if CreativeLib then
+            CreativeLib.VerifyFileIntegrity = noptrue
+            CreativeLib.MD5HashByteArray = function() return "00000000000000000000000000000000" end
         end
-        local modules = {
-            "GameLua.Mod.BaseMod.Common.Security.HiggsBosonComponent",
-            "GameLua.Mod.BaseMod.Common.Security.TssSecurityModule",
-            "GameLua.Mod.BaseMod.Common.Security.AntiCheatModule",
-            "GameLua.Mod.BaseMod.Common.Security.MemoryIntegrityModule"
-        }
-        for _, mn in ipairs(modules) do
-            pcall(function()
-                if package.loaded[mn] then
-                    local m = package.loaded[mn]
-                    m.ControlMHActive = nop
-                    m.Tick = nop
-                    m.Report = nop
-                    m.Check = noptrue
-                    m.Validate = noptrue
-                end
+        local STExtraLib = import("STExtraBlueprintFunctionLibrary")
+        if STExtraLib then
+            STExtraLib.CheckFileIntegrity = nopfalse
+            STExtraLib.VerifySignature = noptrue
+            STExtraLib.IsDevelopment = nopfalse
+        end
+        if Client then
+            Client.VerifyPakFile = noptrue
+            Client.CheckGameLuaIntegrity = noptrue
+        end
+        if _G.TssSDK then
+            _G.TssSDK.Init = nop; _G.TssSDK.Start = nop; _G.TssSDK.Verify = noptrue; _G.TssSDK.CheckIntegrity = noptrue
+        end
+    end)
+end
+
+-- ============================================================
+-- PART 3: SELF-HEAL TIMER (har 0.5 sec – extra safety)
+-- ============================================================
+local function StartSelfHeal()
+    pcall(function()
+        local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
+        if not slua.isValid(pc) then return end
+        
+        if pc.AddGameTimer then
+            pc:AddGameTimer(0.5, true, function()
+                pcall(function()
+                    local currentPC = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
+                    if not slua.isValid(currentPC) then return end
+
+                    -- Force HiggsBoson OFF
+                    local hb = currentPC.HiggsBosonComponent or currentPC.HiggsBoson
+                    if slua.isValid(hb) then
+                        hb.bMHActive = false
+                        if hb.ControlMHActive then hb:ControlMHActive(0) end
+                    end
+
+                    -- Force Reset AntiCheat Manager counters
+                    local ac = currentPC.PlayerAntiCheatManager or currentPC.AntiCheatManager
+                    if slua.isValid(ac) then
+                        local fields = {"AutoAimFailedCnt","TrackingFailedCnt","SpeedUpValue","ServerAccumulateErrors"}
+                        for _, f in ipairs(fields) do
+                            if type(ac[f]) == "number" and ac[f] > 0 then ac[f] = 0 end
+                        end
+                        if ac.ReportAntiCheatDetailData then ac.ReportAntiCheatDetailData = nop end
+                        if ac.PushWeaponAntiData then ac.PushWeaponAntiData = nop end
+                    end
+                end)
             end)
         end
     end)
 end
 
 -- ============================================================
--- INITIALIZE ALL BYPASSES (AUTO-RUN on game start)
+-- PART 4: COMPLETE GAMEPLAY CALLBACKS NUKE (extra safety)
 -- ============================================================
-local function InitAllBypasses()
-    if _G.Bypassed then return end
+local function NukeGameplayCallbacks()
     pcall(function()
-        print("[BYPASS V2.0] Starting All Bypasses...")
-        InitDomainBlocker()
-        InitSkinBypass()
-        InitTssBlocker()
-        InitLogBlocker()
-        InitScannerBlocker()
-        InitReplayBlocker()
-        InitAntiReport()
-        InitGameplayBypass()
-        InitConnectionGuard()
-        InitHiggsBoson()
-        InitZRPRBypasses()
-        InitMemoryBypass()
-        InitIntegrityOverrides()
-        _G.Bypassed = true
-        print("[BYPASS V2.0] All 14 Bypasses Activated Successfully! - @ADITYA_ORG")
+        if not _G.GameplayCallbacks then _G.GameplayCallbacks = {} end
+        local GC = _G.GameplayCallbacks
+        
+        local blocklist = {
+            "ReportAttackFlow","ReportSecAttackFlow","ReportHurtFlow","ReportFireArms",
+            "ReportVerifyInfoFlow","ReportMrpcsFlow","ReportPlayerBehavior",
+            "ReportTeammatHurt","ReportMisKillByTeammate","ReportPlayerPosition",
+            "ReportVehicleMoveFlow","ReportParachuteData","SendTssSdkAntiDataToLobby",
+            "ReportEquipmentFlow","ReportAimFlow","ReportPlayersPing","ReportPlayerIP",
+            "ReportCircleFlow","ReportJumpFlow","ReportPlayerKillFlow",
+            "ClientSecMrpcsFlow","Heartbeat","SwiftHawk","ClientSwiftHawk",
+            "OnDSConnectionSaturated","ReportDSNetSaturation"
+        }
+        for _, f in ipairs(blocklist) do
+            GC[f] = nop
+        end
+        
+        local orig = GC.OnDSPlayerStateChanged
+        GC.OnDSPlayerStateChanged = function(uid, state, ...)
+            local s = state and string.lower(tostring(state)) or ""
+            if s == "cheatdetected" or s == "connectionlost" or s == "kicked" or s == "banned" then
+                return
+            end
+            if orig then pcall(orig, uid, state, ...) end
+        end
+        
+        GC.OnPlayerNetConnectionClosed = nop
+        GC.OnPlayerActorChannelError = nop
+        GC.OnPlayerRPCValidateFailed = nop
+        GC.OnPlayerSpectateException = nop
+        GC.OnShutdownAfterError = nop
+        GC.IsBypassed = true
     end)
 end
 
 -- ============================================================
--- RUN BYPASS IMMEDIATELY (on script load)
+-- INITIALIZE ALL BYPASSES (merged)
 -- ============================================================
+local function InitAllBypasses()
+    if _G._MERGED_BYPASS_DONE then return end
+    pcall(function()
+        print("[MERGED BYPASS] Activating...")
+        InitDomainBlocker()
+        InitMemoryBypass()
+        InitIntegrityOverrides()
+        NukeGameplayCallbacks()
+        StartSelfHeal()
+        -- Additional packet block (direct)
+        pcall(function()
+            if NetUtil and NetUtil.SendPacket then
+                local orig = NetUtil.SendPacket
+                NetUtil.SendPacket = function(name, ...)
+                    local bp = {
+                        ReportAttackFlow=1, ReportHurtFlow=1, ReportFireArms=1,
+                        ReportMrpcsFlow=1, ReportPlayerBehavior=1, on_tss_sdk_anti_data=1,
+                        ReportAimFlow=1, ReportHitFlow=1, report_players_ping=1
+                    }
+                    if bp[name] then return end
+                    return orig(name, ...)
+                end
+                NetUtil.IsBypassed = true
+            end
+        end)
+        _G._MERGED_BYPASS_DONE = true
+        print("[MERGED BYPASS] All systems locked!")
+    end)
+end
+
 InitAllBypasses()
 
 -- ============================================================
--- WELCOME POP-UP (replaces the old bypass popup)
+-- WELCOME POP-UP (original)
 -- ============================================================
 pcall(function()
     local Msg = package.loaded["client.slua.logic.common.logic_common_msg_box"]
@@ -683,6 +1127,11 @@ pcall(function()
         "✓ Premium Build Loaded Successfully!", onClick)
     end
 end)
+
+-- ============================================================
+-- ==================== REST OF FEATURES =====================
+-- (Standalone Wallhack, ESP, Aimbot, Skins, PBC, Menu, etc.)
+-- ============================================================
 
 -- ============================================================
 -- STANDALONE WALLHACK (ZeroX6T style) - NOW WITH CUSTOM COLORS
