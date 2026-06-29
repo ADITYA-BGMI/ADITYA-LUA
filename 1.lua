@@ -2499,7 +2499,7 @@ local function ChamsApplyToMesh(mesh, visColor, occColor)
         mesh:SetIdeaOutlineOcclusionHighlight(true)
         mesh:OverrideIdeaOutlineColor(visColor)
         mesh:SetIdeaOutlineOcclusionColor(occColor)
-        mesh:OverrideIdeaOutlineThickness(3.0)
+        mesh:OverrideIdeaOutlineThickness(10.0)
         mesh:SetIdeaOverrideOutlineAndOcclusion(true)
     end)
     pcall(function()
@@ -2534,10 +2534,10 @@ local function ChamsTick()
         if not LinearColor then return end
 
         local colors = {
-            vis = LinearColor(10, 10, 1, 100),    -- cyan
-            occ = LinearColor(10, 0, 10, 100),    -- purple
-            bVis = LinearColor(9.8, 9.5, 0, 100),
-            bOcc = LinearColor(1.8, 0.3, 9.0, 100)
+            vis = LinearColor(50, 50, 5, 100),    -- cyan
+            occ = LinearColor(50, 0, 50, 100),    -- purple
+            bVis = LinearColor(49, 48, 0, 100),
+            bOcc = LinearColor(9, 1.5, 45, 100)
         }
 
         _G._ChamsTickCount = _G._ChamsTickCount + 1
@@ -2686,7 +2686,8 @@ _G.InitModMenuTab = function()
     if not SettingPageDefine.ModMenu then
         local AliasMap = require("client.slua.umg.NewSetting.Item.AliasMap")
 
-        local ModMenuStack = {
+        -- ========== Main Stack (without Wallhack) ==========
+        local MainStack = {
             { UI = AliasMap.Title, Text = "ADITYA_ORG SETTINGS" },
 
             {
@@ -2711,8 +2712,79 @@ _G.InitModMenuTab = function()
                     return true
                 end
             },
-            -- ===== WALLHACK SECTION =====
-            { UI = AliasMap.Title, Text = "--- WALLHACK ---" },
+            -- ===== SKIN TOGGLE =====
+            {
+                Key = "Skins",
+                UI = AliasMap.TitleSwitcher,
+                Text = "SKINS",
+                GetFunc = function() return _G.Mod_Skin_Enabled ~= false end,
+                SetFunc = function(_, value)
+                    _G.Mod_Skin_Enabled = value
+                    print("[MOD] SKINS: " .. (value and "ON ✓" or "OFF ✗"))
+                    return true
+                end
+            },
+            -- ===== PBC WALLHACK (separate toggle) =====
+            {
+                Key = "PBC_Wallhack",
+                UI = AliasMap.TitleSwitcher,
+                Text = "PBC WALL HACK",
+                GetFunc = function() return _G.Mod_PBCWallhack_Enabled or false end,
+                SetFunc = function(_, value)
+                    _G.Mod_PBCWallhack_Enabled = value
+                    print("[MOD] PBC WALL HACK: " .. (value and "ON ✓" or "OFF ✗"))
+                    return true
+                end
+            },
+            {
+                Key = "FPS165",
+                UI = AliasMap.Switcher,
+                Text = "165 FPS",
+                GetFunc = function() return _G.Mod_FPS165_Enabled ~= false end,
+                SetFunc = function(_, value)
+                    _G.Mod_FPS165_Enabled = value
+                    if value then _G.Enable165FPSLogic() end
+                    print("[MOD] 165 FPS: " .. (value and "ON ✓" or "OFF ✗"))
+                    return true
+                end
+            },
+            {
+                Key = "NoGrass",
+                UI = AliasMap.Switcher,
+                Text = "NO GRASS",
+                GetFunc = function() return _G.Mod_NoGrass_Enabled ~= false end,
+                SetFunc = function(_, value)
+                    _G.Mod_NoGrass_Enabled = value
+                    if value then
+                        pcall(function()
+                            local gi = slua_GameFrontendHUD and slua_GameFrontendHUD:GetGameInstance()
+                            if gi then
+                                gi:ExecuteCMD("grass.DensityScale", "0")
+                                gi:ExecuteCMD("grass.DiscardDataOnLoad", "1")
+                            end
+                        end)
+                    end
+                    print("[MOD] NO GRASS: " .. (value and "ON ✓" or "OFF ✗"))
+                    return true
+                end
+            },
+            {
+                Key = "iPadView",
+                UI = AliasMap.Switcher,
+                Text = "IPAD VIEW",
+                GetFunc = function() return _G.Mod_iPadView_Enabled ~= false end,
+                SetFunc = function(_, value)
+                    _G.Mod_iPadView_Enabled = value
+                    if value then _G.EnableiPadViewUI() end
+                    print("[MOD] IPAD VIEW: " .. (value and "ON ✓" or "OFF ✗"))
+                    return true
+                end
+            }
+        }
+
+        -- ========== Wallhack Stack (separate category) ==========
+        local WallhackStack = {
+            { UI = AliasMap.Title, Text = "--- WALLHACK SETTINGS ---" },
             {
                 Key = "WH_Enabled",
                 UI = AliasMap.TitleSwitcher,
@@ -2786,79 +2858,10 @@ _G.InitModMenuTab = function()
                     _G.ESPConfig.ShowAI = value
                     return true
                 end
-            },
-            -- ===== END WALLHACK SECTION =====
-            -- ===== SKIN TOGGLE =====
-            {
-                Key = "Skins",
-                UI = AliasMap.TitleSwitcher,
-                Text = "SKINS",
-                GetFunc = function() return _G.Mod_Skin_Enabled ~= false end,
-                SetFunc = function(_, value)
-                    _G.Mod_Skin_Enabled = value
-                    print("[MOD] SKINS: " .. (value and "ON ✓" or "OFF ✗"))
-                    return true
-                end
-            },
-            -- ===== NEW PBC WALLHACK TOGGLE =====
-            {
-                Key = "PBC_Wallhack",
-                UI = AliasMap.TitleSwitcher,
-                Text = "PBC WALL HACK",
-                GetFunc = function() return _G.Mod_PBCWallhack_Enabled or false end,
-                SetFunc = function(_, value)
-                    _G.Mod_PBCWallhack_Enabled = value
-                    print("[MOD] PBC WALL HACK: " .. (value and "ON ✓" or "OFF ✗"))
-                    return true
-                end
-            },
-            -- ==============================
-            {
-                Key = "FPS165",
-                UI = AliasMap.Switcher,
-                Text = "165 FPS",
-                GetFunc = function() return _G.Mod_FPS165_Enabled ~= false end,
-                SetFunc = function(_, value)
-                    _G.Mod_FPS165_Enabled = value
-                    if value then _G.Enable165FPSLogic() end
-                    print("[MOD] 165 FPS: " .. (value and "ON ✓" or "OFF ✗"))
-                    return true
-                end
-            },
-            {
-                Key = "NoGrass",
-                UI = AliasMap.Switcher,
-                Text = "NO GRASS",
-                GetFunc = function() return _G.Mod_NoGrass_Enabled ~= false end,
-                SetFunc = function(_, value)
-                    _G.Mod_NoGrass_Enabled = value
-                    if value then
-                        pcall(function()
-                            local gi = slua_GameFrontendHUD and slua_GameFrontendHUD:GetGameInstance()
-                            if gi then
-                                gi:ExecuteCMD("grass.DensityScale", "0")
-                                gi:ExecuteCMD("grass.DiscardDataOnLoad", "1")
-                            end
-                        end)
-                    end
-                    print("[MOD] NO GRASS: " .. (value and "ON ✓" or "OFF ✗"))
-                    return true
-                end
-            },
-            {
-                Key = "iPadView",
-                UI = AliasMap.Switcher,
-                Text = "IPAD VIEW",
-                GetFunc = function() return _G.Mod_iPadView_Enabled ~= false end,
-                SetFunc = function(_, value)
-                    _G.Mod_iPadView_Enabled = value
-                    if value then _G.EnableiPadViewUI() end
-                    print("[MOD] IPAD VIEW: " .. (value and "ON ✓" or "OFF ✗"))
-                    return true
-                end
             }
         }
 
+        -- ========== Register categories ==========
         SettingPageDefine.ModMenu = {
             Key = "ModMenu",
             loc = "ADITYA_ORG MENU",
@@ -2867,7 +2870,12 @@ _G.InitModMenuTab = function()
                 {
                     Key = "ModMenu_Main",
                     loc = "ALL FEATURES",
-                    Stack = ModMenuStack
+                    Stack = MainStack
+                },
+                {
+                    Key = "Cat_Wallhack",
+                    loc = "WALLHACK SETTINGS",
+                    Stack = WallhackStack
                 }
             }
         }
@@ -2875,6 +2883,7 @@ _G.InitModMenuTab = function()
         table.insert(SettingCatalog, SettingPageDefine.ModMenu)
     end
 
+    -- UIManager hook (same as before)
     local UIManager = _G.UIManager
     if UIManager and not UIManager._IsModMenuHooked then
         local old_ShowUI = UIManager.ShowUI
