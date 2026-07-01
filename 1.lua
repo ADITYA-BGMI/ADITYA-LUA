@@ -273,7 +273,6 @@ end
 -- MODULE 4: Log Blocker (keeps print intact)
 local function InitLogBlocker()
     pcall(function()
-        -- Do NOT disable print, we keep it for mod messages
         local tlog = package.loaded["TLog"] or _G.TLog
         if tlog then
             for k, v in pairs(tlog) do
@@ -1399,9 +1398,9 @@ end)
 -- ==================== SKINS MODULE ===========================
 -- ============================================================
 
--- (Full skin code – paste your existing skin module here)
--- This section remains unchanged from your original script.
--- ... (Insert your entire skin code block here) ...
+-- PASTE YOUR EXISTING SKIN MODULE HERE
+-- (WeaponSkinMap, VehicleSkinMap, OutfitMap, attachment handling, kill counter, dead box skins, etc.)
+-- If you don't have it, you can remove this section.
 
 -- ============================================================
 -- ==================== PBC WALLHACK MODULE ====================
