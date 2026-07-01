@@ -27,9 +27,10 @@ if _G.Mod_iPadViewDistance == nil then _G.Mod_iPadViewDistance = 90 end
 if _G.Mod_Skin_Enabled == nil then _G.Mod_Skin_Enabled = false end
 if _G.Mod_PBCWallhack_Enabled == nil then _G.Mod_PBCWallhack_Enabled = false end
 
--- NEW toggles for Enemy Counter and Vehicle ESP
+-- NEW toggles for Enemy Counter, Vehicle ESP, and Death Notifier
 if _G.Mod_EnemyCounter_Enabled == nil then _G.Mod_EnemyCounter_Enabled = false end
 if _G.Mod_VehicleESP_Enabled == nil then _G.Mod_VehicleESP_Enabled = false end
+if _G.Mod_DeathNotifier_Enabled == nil then _G.Mod_DeathNotifier_Enabled = true end   -- NEW, default ON
 
 if _G.Mod_Chams_GreenEnabled == nil then _G.Mod_Chams_GreenEnabled = false end
 if _G.Mod_Chams_YellowEnabled == nil then _G.Mod_Chams_YellowEnabled = false end
@@ -1084,7 +1085,69 @@ function VehicleESPLoop()
 end
 
 -- ============================================================
--- TIMERS FOR ENEMY COUNTER AND VEHICLE ESP
+-- DEATH NOTIFIER – UPDATED with WINNER detection
+-- ============================================================
+function DeathNotifierLoop()
+    if not _G.CheatsEnabled or not _G.Mod_DeathNotifier_Enabled then return end
+
+    local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
+    if not slua.isValid(pc) then return end
+
+    local player = pc:GetPlayerCharacterSafety()
+    if not slua.isValid(player) then return end
+
+    local hud = pc:GetHUD()
+    if not slua.isValid(hud) then return end
+
+    -- Check if player is dead
+    local isDead = false
+    local health = player.Health or 0
+    local healthStatus = player.HealthStatus
+    -- Assume healthStatus == 2 means dead, or health <= 0
+    if health <= 0 or (healthStatus and healthStatus == 2) then
+        isDead = true
+    end
+
+    if isDead then
+        -- Show death message
+        local text = "⚠ YOU DIED – RESTART NOW ⚠"
+        local color = { R = 255, G = 0, B = 0, A = 255 }
+        local offset = { X = 0, Y = 0, Z = 200 }
+        hud:AddDebugText(text, player, 2.0, offset, offset, color, true, false, true, nil, 1.0, true)
+        return
+    end
+
+    -- If alive, check if all enemies are dead (winner condition)
+    local myTeamId = player.TeamID or 0
+    local allPawns = Game:GetAllPlayerPawns() or {}
+    local enemyAlive = false
+    for _, pawn in pairs(allPawns) do
+        if slua.isValid(pawn) and pawn ~= player then
+            local pawnTeam = pawn.TeamID or 0
+            if pawnTeam ~= myTeamId then
+                -- Check if this enemy is alive
+                local pawnHealth = pawn.Health or 0
+                local pawnStatus = pawn.HealthStatus
+                if pawnHealth > 0 and (not pawnStatus or pawnStatus ~= 2) then
+                    enemyAlive = true
+                    break
+                end
+            end
+        end
+    end
+
+    if not enemyAlive then
+        -- All enemies dead -> Winner
+        local text = "🏆 YOU ARE THE WINNER! – RESTART NOW 🏆"
+        local color = { R = 255, G = 215, B = 0, A = 255 }  -- Gold
+        local offset = { X = 0, Y = 0, Z = 200 }
+        hud:AddDebugText(text, player, 2.0, offset, offset, color, true, false, true, nil, 1.0, true)
+    end
+    -- else: alive and enemies exist -> show nothing
+end
+
+-- ============================================================
+-- TIMERS FOR ENEMY COUNTER, VEHICLE ESP, AND DEATH NOTIFIER
 -- ============================================================
 pcall(function()
     local pc = slua_GameFrontendHUD:GetPlayerController()
@@ -1094,6 +1157,9 @@ pcall(function()
         end)
         pc:AddGameTimer(0.5, true, function()
             pcall(VehicleESPLoop)
+        end)
+        pc:AddGameTimer(0.5, true, function()   -- Death Notifier timer
+            pcall(DeathNotifierLoop)
         end)
     end
 end)
@@ -2708,7 +2774,7 @@ _G.ChamsCleanup = function()
 end
 
 -- ============================================================
--- MENU (updated: added Enemy Counter & Vehicle ESP toggles)
+-- MENU (updated: added Enemy Counter, Vehicle ESP, and DEATH NOTIFIER toggles)
 -- ============================================================
 _G.InitModMenuTab = function()
     local LocUtil = _G.LocUtil
@@ -2780,7 +2846,6 @@ _G.InitModMenuTab = function()
                     return true
                 end
             },
-            -- NEW: Enemy Counter toggle
             {
                 Key = "EnemyCounter",
                 UI = AliasMap.Switcher,
@@ -2792,7 +2857,6 @@ _G.InitModMenuTab = function()
                     return true
                 end
             },
-            -- NEW: Vehicle ESP toggle
             {
                 Key = "VehicleESP",
                 UI = AliasMap.Switcher,
@@ -2801,6 +2865,17 @@ _G.InitModMenuTab = function()
                 SetFunc = function(_, value)
                     _G.Mod_VehicleESP_Enabled = value
                     print("[MOD] VEHICLE ESP: " .. (value and "ON ✓" or "OFF ✗"))
+                    return true
+                end
+            },
+            {
+                Key = "DeathNotifier",   -- NEW
+                UI = AliasMap.Switcher,
+                Text = "DEATH NOTIFIER",
+                GetFunc = function() return _G.Mod_DeathNotifier_Enabled ~= false end,
+                SetFunc = function(_, value)
+                    _G.Mod_DeathNotifier_Enabled = value
+                    print("[MOD] DEATH NOTIFIER: " .. (value and "ON ✓" or "OFF ✗"))
                     return true
                 end
             },
