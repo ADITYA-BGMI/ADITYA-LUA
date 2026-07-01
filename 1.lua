@@ -1263,46 +1263,38 @@ local function ApplyHardAimbot()
     if _G.Mod_Aimbot_Enabled == false then return end
     pcall(function()
         local pc = slua_GameFrontendHUD:GetPlayerController()
-        if not slua.isValid(pc) then return end
+        if not isValid(pc) then return end
+
         local char = pc:GetPlayerCharacterSafety()
-        if not slua.isValid(char) then return end
+        if not isValid(char) then return end
+
         local wm = char.WeaponManagerComponent
-        if not slua.isValid(wm) then return end
+        if not isValid(wm) then return end
+
         local weapon = wm.CurrentWeaponReplicated
-        if not slua.isValid(weapon) then return end
+        if not isValid(weapon) then return end
+
         local entity = weapon.ShootWeaponEntityComp
-        if not slua.isValid(entity) then return end
+        if not isValid(entity) then return end
+
+        local strengthMul = (_G.Mod_AimbotStrength or 50) / 100
+        
         entity.GameDeviationFactor = 0.2
-        entity.WeaponAimInTime = 20
-        entity.SwitchFromIdleToBackpackTime = 0.15
-        entity.SwitchFromBackpackToIdleTime = 0.15
-        entity.ShotGunHorizontalSpread = 0.0
-        entity.ShotGunVerticalSpread = 0.0
         entity.RecoilKickADS = 0.020
         entity.AccessoriesVRecoilFactor = 0.30
         entity.AccessoriesHRecoilFactor = 0.35
         entity.ExtraHitPerformScale = 10
-        if entity.RecoilInfo then
-            entity.RecoilInfo.VerticalRecoilMin = 0.2
-            entity.RecoilInfo.VerticalRecoilMax = 0.5
-            entity.RecoilInfo.RecoilSpeedVertical = 0.2
-            entity.RecoilInfo.RecoilSpeedHorizontal = 0.15
-            entity.RecoilInfo.VerticalRecoveryMax = 0.2
-        end
-        entity.RecoilModifierStand = 0.1
-        entity.RecoilModifierCrouch = 0.1
-        entity.RecoilModifierProne = 0.1
         if entity.AutoAimingConfig then
             for _, range in ipairs({"OuterRange", "InnerRange"}) do
                 local cfg = entity.AutoAimingConfig[range]
                 if cfg then
-                    cfg.Speed = 8
-                    cfg.RangeRate = 5
-                    cfg.SpeedRate = 5
-                    cfg.RangeRateSight = 4
-                    cfg.SpeedRateSight = 4
-                    cfg.CrouchRate = 4
-                    cfg.ProneRate = 4
+                    cfg.Speed = 5
+                    cfg.RangeRate = 3
+                    cfg.SpeedRate = 2
+                    cfg.RangeRateSight = 2
+                    cfg.SpeedRateSight = 3
+                    cfg.CrouchRate = 2
+                    cfg.ProneRate = 2
                     cfg.DyingRate = 0
                     cfg.adsorbMaxRange = 200
                     cfg.adsorbMinRange = 20
@@ -1313,21 +1305,9 @@ local function ApplyHardAimbot()
             end
             entity.AutoAimingConfig = entity.AutoAimingConfig
         end
-        pcall(function()
-            local aimComp = char.BP_AutoAimingComponent_C
-                         or char.BP_AutoAimingComponent
-                         or char.AutoAimingComponent
-            if slua.isValid(aimComp) and aimComp.Bones then
-                pcall(function() aimComp.Bones[0] = "neck_01" end)
-                pcall(function() aimComp.Bones[1] = "neck_01" end)
-                pcall(function() aimComp.Bones[2] = "neck_01" end)
-                pcall(function() aimComp.Bones:Set(0, "neck_01") end)
-                pcall(function() aimComp.Bones:Set(1, "neck_01") end)
-                pcall(function() aimComp.Bones:Set(2, "neck_01") end)
-            end
-        end)
     end)
 end
+
 
 local function AttachAimbotTimer()
     pcall(function()
