@@ -1112,7 +1112,7 @@ function DeathNotifierLoop()
         -- Show death message
         local text = "⚠ YOU DIED – RESTART NOW ⚠"
         local color = { R = 255, G = 0, B = 0, A = 255 }
-        local offset = { X = 0, Y = 0, Z = 200 }
+        local offset = { X = 0, Y = 0, Z = 60 }
         hud:AddDebugText(text, player, 2.0, offset, offset, color, true, false, true, nil, 1.0, true)
         return
     end
@@ -1138,7 +1138,7 @@ function DeathNotifierLoop()
 
     if not enemyAlive then
         -- All enemies dead -> Winner
-        local text = "🏆 YOU ARE THE WINNER! – RESTART NOW 🏆"
+        local text = " YOU ARE THE WINNER! – RESTART NOW "
         local color = { R = 255, G = 215, B = 0, A = 255 }  -- Gold
         local offset = { X = 0, Y = 0, Z = 200 }
         hud:AddDebugText(text, player, 2.0, offset, offset, color, true, false, true, nil, 1.0, true)
