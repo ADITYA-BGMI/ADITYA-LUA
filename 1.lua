@@ -1,8 +1,8 @@
 -- ============================================================
 -- MODDED BY ADITYA_ORG + @ADITYA_ORG
--- Complete MOD with Bypass V4.0 + SKINS + PBC WALLHACK
+-- Complete MOD with 16‑Layer Bypass, SKINS, PBC WALLHACK
 -- All features: Aimbot, ESP, PBC Wallhack, 165 FPS, No Grass, iPad View, SKINS
--- Bypass activates on game start with popup
+-- Bypass integrated from TrnDravix's Ultimate Shield
 -- ============================================================
 
 -- ============================================================
@@ -13,889 +13,6 @@ do
     if _G._MOD_LOADED and _G._MOD_PC == pc then return end
     _G._MOD_LOADED = true
     _G._MOD_PC = pc
-end
-
--- ============================================================
--- ==================== ULTIMATE BYPASS V4.0 ====================
--- (Full Hook System + Anti-Ban + Spoofing + Telemetry Scrambler)
--- ============================================================
-
--- Self-protection & anti-tamper
-local function ProtectEnvironment()
-    if debug and debug.getinfo then
-        local old_getinfo = debug.getinfo
-        debug.getinfo = function(...)
-            local info = old_getinfo(...)
-            if info and info.source and string.find(info.source, "1.lua") then
-                return nil
-            end
-            return info
-        end
-    end
-
-    local g = _G
-    local mt = getmetatable(g) or {}
-    mt.__newindex = function(t, k, v)
-        if k == "BypassLoaded" then return end
-        rawset(t, k, v)
-    end
-    mt.__index = function(t, k)
-        if k == "BypassLoaded" then return true end
-        return rawget(t, k)
-    end
-    setmetatable(g, mt)
-    _G.BypassLoaded = true
-end
-ProtectEnvironment()
-
--- NOP utilities (do NOT override print, to keep mod messages)
-local function nop() end
-local function nopt() return {} end
-local function nopnil() return nil end
-local function noptrue() return true end
-local function nopfalse() return false end
-local function nopstr() return "" end
-
--- Domain blocklist (expanded)
-local blockedDomains = {
-    "tss.tencent", "syzsdk", "gcloud.qq", "reportlog", "tdos", "logupload", "feedback.wh", "crash2",
-    "privacy.qq", "privacy.tencent", "oth.eve", "mdt.qq", "act.tencentyun", "analytics", "report.qq",
-    "anticheatexpert", "crashsight", "wetest", "log.tav", "sngd", "tracer", "intlsdk", "igamecj",
-    "cdn.club", "gpubgm", "graph.facebook", "calendarpushsubscription", "googleads", "doubleclick",
-    "firebaselogging", "firebaseremoteconfig", "fonts.googleapis", "abs.twimg", "dl.listdl",
-    "igame.gcloudcs", "bugly", "beacon", "helpshift", "tdm", "apm", "safeguard", "weiyun", "qzone",
-    "tencent-cloud", "myapp", "idqqimg", "gtimg", "qqmail", "tcdn", "cloudctrl", "sdkostrace",
-    "103.134.189.146", "mbgame", "csoversea", "igame", "pubgmobile", "down.anticheatexpert.com",
-    "asia.csoversea.mbgame.anticheatexpert.com", "log.tav.qq", "syzsdk.qq", "logiservice.qcloud",
-    "opensdk.tencent", "exp.helpshift", "loginsdkapi.zingplay", "firebase", "googleapis", "facebook", "gvoice",
-    "play.googleapis", "app-measurement", "googlesyndication", "googleadservices", "google-analytics",
-    "googletagmanager", "googleoptimize", "googleusercontent", "googleapis.com", "gstatic.com",
-    "graph.instagram.com", "api.telegram.org", "api.whatsapp.com"
-}
-
--- MODULE 1: Advanced Domain Blocker
-local function InitAdvancedDomainBlocker()
-    pcall(function()
-        local hc = package.loaded["client.network.http.HttpClient"]
-        if hc then
-            local mt = getmetatable(hc) or {}
-            local old_send = hc.SendRequest
-            mt.__index = function(t, k)
-                if k == "SendRequest" then
-                    return function(self, url, cb, method, headers, content, timeout)
-                        for _, host in ipairs(blockedDomains) do
-                            if url and string.find(string.lower(url), string.lower(host)) then
-                                return nil
-                            end
-                        end
-                        return old_send(self, url, cb, method, headers, content, timeout)
-                    end
-                end
-                return rawget(t, k)
-            end
-            setmetatable(hc, mt)
-        end
-
-        if NetUtil and NetUtil.SendHttpRequest then
-            local old = NetUtil.SendHttpRequest
-            NetUtil.SendHttpRequest = function(url, cb, method, headers, content)
-                for _, host in ipairs(blockedDomains) do
-                    if url and string.find(string.lower(url), string.lower(host)) then
-                        return nil
-                    end
-                end
-                return old(url, cb, method, headers, content)
-            end
-        end
-
-        local wv = package.loaded["client.slua.logic.url.logic_webview_sdk"]
-        if wv and wv.OpenURL then
-            local old = wv.OpenURL
-            wv.OpenURL = function(url)
-                for _, host in ipairs(blockedDomains) do
-                    if url and string.find(string.lower(url), string.lower(host)) then
-                        return nil
-                    end
-                end
-                return old(url)
-            end
-        end
-
-        if socket and socket.connect then
-            local old = socket.connect
-            socket.connect = function(host, port, timeout)
-                for _, blocked in ipairs(blockedDomains) do
-                    if host and string.find(string.lower(host), string.lower(blocked)) then
-                        return nil, "blocked"
-                    end
-                end
-                return old(host, port, timeout)
-            end
-        end
-
-        if package.loaded["socket"] and package.loaded["socket"].dns and package.loaded["socket"].dns.gethostbyname then
-            local old = package.loaded["socket"].dns.gethostbyname
-            package.loaded["socket"].dns.gethostbyname = function(host)
-                for _, blocked in ipairs(blockedDomains) do
-                    if host and string.find(string.lower(host), string.lower(blocked)) then
-                        return "127.0.0.1"
-                    end
-                end
-                return old(host)
-            end
-        end
-    end)
-end
-
--- MODULE 2: Hook System (Metatable + debug)
-local function InitHookSystem()
-    pcall(function()
-        local function hookFunction(obj, funcName, replacement)
-            if not obj or not obj[funcName] then return end
-            local old = obj[funcName]
-            obj[funcName] = function(...)
-                return replacement(...)
-            end
-            obj["_orig_" .. funcName] = old
-        end
-
-        if _G.GameplayCallbacks then
-            local GC = _G.GameplayCallbacks
-            local blockList = {
-                "ReportAttackFlow","ReportSecAttackFlow","ReportHurtFlow",
-                "ReportFireArms","ReportVerifyInfoFlow","ReportMrpcsFlow",
-                "ReportPlayerBehavior","ReportTeammatHurt","ReportMisKillByTeammate",
-                "ReportForbitPick","ReportPlayerMoveRoute","ReportPlayerPosition",
-                "ReportVehicleMoveFlow","ReportSecTgameMovingFlow","ReportParachuteData",
-                "SendTssSdkAntiDataToLobby","SendDSErrorLogToLobby",
-                "SendDSErrorLogToLobbyOnece","SendDSHawkEyePatrolLogToLobby",
-                "ReportEquipmentFlow","ReportAimFlow",
-                "ReportHeavyWeaponBoxSpawnFlow","ReportHeavyWeaponBoxActivationFlow",
-                "ReportHeavyWeaponBoxOpenPlayerFlow","ReportHeavyWeaponBoxItemFlow",
-                "ReportPlayersPing","ReportPlayerIP","ReportPlayerFramePingRecord",
-                "OnDSConnectionSaturated","ReportDSNetSaturation",
-                "ReportNetContinuousSaturate","ReportDSNetRate",
-                "SendClientStats","SendServerAvgTickDelta",
-                "ReportCircleFlow","ReportDSCircleFlow","ReportJumpFlow",
-                "ReportAIStrategyInfo","SendAIDeliveryInfo","ReportDailyTaskInfo",
-                "ReportMatchRoomData","SendPlayerSpectatingLog",
-                "ReportIDCardProduceFlow","ReportIDCardPickUpFlow",
-                "ReportIDCardDestroyFlow","ReportRevivalFlow",
-                "ReportGameSetting","ReportGameSettingNew",
-                "ReportAntsVoiceTeamCreate","ReportAntsVoiceTeamQuit",
-                "ReportCommonInfo","ReportLightweightStat",
-                "SendSecTLog","SendDataMiningTLog","SendActivityTLog"
-            }
-            for _, f in ipairs(blockList) do
-                if GC[f] then
-                    GC[f] = nop
-                end
-            end
-            if GC.OnDSPlayerStateChanged then
-                local orig = GC.OnDSPlayerStateChanged
-                GC.OnDSPlayerStateChanged = function(uid, state, ...)
-                    local s = string.lower(tostring(state or ""))
-                    if s == "cheatdetected" or s == "connectionlost" or s == "connectiontimeout" then
-                        return
-                    end
-                    return orig(uid, state, ...)
-                end
-            end
-        end
-
-        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
-        if sm then
-            local mt = getmetatable(sm) or {}
-            local old_get = mt.__index
-            mt.__index = function(t, k)
-                local sub = old_get(t, k)
-                if sub and type(sub) == "table" then
-                    return setmetatable({}, {
-                        __index = function(_, method)
-                            if method == "Report" or method == "ReportException" or method == "StartCheck" or method == "CheckAvatar" then
-                                return nop
-                            end
-                            return sub[method]
-                        end
-                    })
-                end
-                return sub
-            end
-            setmetatable(sm, mt)
-        end
-    end)
-end
-
--- MODULE 3: TSS + SDK Blocker (Complete)
-local function InitTssSdkBlocker()
-    pcall(function()
-        local tss = package.loaded["TssSdk"] or _G.TssSdk
-        if tss then
-            for k, v in pairs(tss) do
-                if type(v) == "function" then
-                    tss[k] = nop
-                end
-            end
-            tss.ScanMemory = noptrue
-            tss.IsEmulator = nopfalse
-            tss.GetTssSdkReportInfo = nopstr
-        end
-
-        local beacon = package.loaded["BeaconSDK"] or _G.BeaconSDK
-        if beacon then
-            for k, v in pairs(beacon) do
-                if type(v) == "function" then
-                    beacon[k] = nop
-                end
-            end
-        end
-
-        local bugly = package.loaded["BuglySDK"] or _G.BuglySDK
-        if bugly then
-            for k, v in pairs(bugly) do
-                if type(v) == "function" then
-                    bugly[k] = nop
-                end
-            end
-        end
-
-        local helpshift = package.loaded["HelpShift"] or _G.HelpShift
-        if helpshift then
-            for k, v in pairs(helpshift) do
-                if type(v) == "function" then
-                    helpshift[k] = nop
-                end
-            end
-        end
-    end)
-end
-
--- MODULE 4: Log Blocker (keeps print intact)
-local function InitLogBlocker()
-    pcall(function()
-        local tlog = package.loaded["TLog"] or _G.TLog
-        if tlog then
-            for k, v in pairs(tlog) do
-                if type(v) == "function" then
-                    tlog[k] = nop
-                end
-            end
-        end
-
-        local cs = package.loaded["CrashSight"] or _G.CrashSight
-        if cs then
-            for k, v in pairs(cs) do
-                if type(v) == "function" then
-                    cs[k] = nop
-                end
-            end
-        end
-
-        local gru = package.loaded["GameLua.Mod.BaseMod.GamePlay.GameReport.GameReportUtils"]
-        if gru then
-            gru.BugglyPostExceptionFull = nopfalse
-            gru.CheckCanBugglyPostException = nopfalse
-            gru.ReplayReportData = nop
-            gru.ReportGameException = nop
-        end
-
-        local ctr = package.loaded["client.slua.logic.report.ClientToolsReport"]
-        if ctr then
-            for k, v in pairs(ctr) do
-                if type(v) == "function" then
-                    ctr[k] = nop
-                end
-            end
-        end
-    end)
-end
-
--- MODULE 5: Scanner & Integrity Checks
-local function InitScannerBlocker()
-    pcall(function()
-        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
-        if sm then
-            local subsystems = {
-                "AFKReportorSubsystem",
-                "ClientDataStatistcsSubsystem",
-                "AvatarExceptionSubsystem",
-                "ShootVerifySubSystemClient",
-                "FileCheckSubsystem"
-            }
-            for _, name in ipairs(subsystems) do
-                local sub = sm:Get(name)
-                if sub then
-                    for k, v in pairs(sub) do
-                        if type(v) == "function" then
-                            sub[k] = nop
-                        end
-                    end
-                    if sub.ReportPingDelayTimer then
-                        sub:RemoveGameTimer(sub.ReportPingDelayTimer)
-                        sub.ReportPingDelayTimer = nil
-                    end
-                end
-            end
-        end
-
-        local cmbl = import("CreativeModeBlueprintLibrary")
-        if cmbl then
-            cmbl.MD5HashByteArray = function() return "BYPASSED" end
-            cmbl.GetContentDiffData = function() return true, "BYPASSED" end
-        end
-
-        local aepi = package.loaded["GameLua.Mod.Library.GamePlay.Avatar.Exception.AvatarExceptionPlayerInst"]
-        if aepi then
-            for k, v in pairs(aepi) do
-                if type(v) == "function" then
-                    aepi[k] = nop
-                end
-            end
-            aepi.CheckCanBugglyPostException = nopfalse
-        end
-
-        local acm = package.loaded["blacklist.slua.logic.lobby_gm.AvatarCheckerModule"]
-        if acm then
-            acm.CheckAvatar = noptrue
-            acm.ReportException = nop
-        end
-
-        local lmw = package.loaded["client.slua.logic.memory_warning.logic_memory_warning"]
-        if lmw then
-            lmw.OnMemoryWarning = nop
-            lmw.ReportMemoryWarning = nop
-        end
-    end)
-end
-
--- MODULE 6: Anti-Report (Full)
-local function InitAntiReport()
-    pcall(function()
-        local crp = nil
-        local paths = {
-            "GameLua.Mod.BaseMod.Client.Security.ClientReportPlayerSubsystem",
-            "Client.Security.ClientReportPlayerSubsystem"
-        }
-        for _, p in ipairs(paths) do
-            if package.loaded[p] then
-                crp = package.loaded[p]
-                break
-            end
-            local ok, m = pcall(require, p)
-            if ok and m then
-                crp = m
-                break
-            end
-        end
-
-        if crp then
-            for k, v in pairs(crp) do
-                if type(v) == "function" then
-                    crp[k] = nop
-                end
-            end
-            crp.GetFatalDamagerMap = nopt
-            crp.GetCachedTeammateName2InfoMap = nopt
-            crp.GetTeammateName2InfoMapDuringBattle = nopt
-            crp.GetCurrentNotInTeamHistoricalTeammateMap = nopt
-            crp.GetInTeamIndexFromHistoricalTeammateInfo = function() return -1 end
-        end
-    end)
-end
-
--- MODULE 7: Gameplay Bypass (DS State + Network Packets)
-local function InitGameplayBypass()
-    pcall(function()
-        if NetUtil and NetUtil.SendPacket then
-            local old = NetUtil.SendPacket
-            local blockPacketNames = {
-                "ReportAttackFlow", "ReportSecAttackFlow", "ReportHurtFlow",
-                "ReportFireArms", "ReportVerifyInfoFlow", "ReportMrpcsFlow",
-                "ReportPlayerBehavior", "ReportTeammatHurt",
-                "on_tss_sdk_anti_data", "report_parachute_data",
-                "ReportAimFlow", "ReportHitFlow",
-                "ReportCircleFlow", "ReportJumpFlow",
-                "ReportGameStartFlow", "ReportGameEndFlow",
-                "report_players_ping", "report_player_ip",
-                "tss_sdk_report", "report_memory_exception",
-                "report_avatar_exception",
-                "report_cheat_detected", "report_anti_debug", "report_emulator"
-            }
-            local blockMap = {}
-            for _, name in ipairs(blockPacketNames) do blockMap[name] = true end
-
-            NetUtil.SendPacket = function(name, ...)
-                if blockMap[name] then
-                    return
-                end
-                return old(name, ...)
-            end
-        end
-    end)
-end
-
--- MODULE 8: Memory & Script Protection
-local function InitMemoryProtection()
-    pcall(function()
-        local old_pcall = pcall
-        pcall = function(f, ...)
-            return old_pcall(function(...)
-                local old_G = _G
-                _G = {}
-                local ret = {f(...)}
-                _G = old_G
-                return unpack(ret)
-            end, ...)
-        end
-
-        if debug and debug.getupvalue then
-            local old = debug.getupvalue
-            debug.getupvalue = function(f, n)
-                if f == nop or f == nopt or f == nopnil or f == noptrue or f == nopfalse or f == nopstr then
-                    return nil
-                end
-                return old(f, n)
-            end
-        end
-
-        if string and string.dump then
-            local old_dump = string.dump
-            string.dump = function(f)
-                if f == nop or f == nopt or f == nopnil or f == noptrue or f == nopfalse or f == nopstr then
-                    return nil
-                end
-                return old_dump(f)
-            end
-        end
-    end)
-end
-
--- MODULE 9: Anti-Flag & Offline Flag Killer
-local function InitAntiFlag()
-    pcall(function()
-        local function killFlag(obj)
-            if obj then
-                if obj.bIsBanned then obj.bIsBanned = false end
-                if obj.bIsFlagged then obj.bIsFlagged = false end
-                if obj.bOfflineFlag then obj.bOfflineFlag = false end
-                if obj.bReported then obj.bReported = false end
-                if obj.FlagCount then obj.FlagCount = 0 end
-                if obj.OfflineFlagCount then obj.OfflineFlagCount = 0 end
-                if obj.BanReason then obj.BanReason = "" end
-                if obj.BanDuration then obj.BanDuration = 0 end
-            end
-        end
-
-        for k, v in pairs(package.loaded) do
-            if type(v) == "table" then
-                killFlag(v)
-                for _, sub in pairs(v) do
-                    if type(sub) == "table" then
-                        killFlag(sub)
-                    end
-                end
-            end
-        end
-
-        local flagSetters = {
-            "SetBanned", "SetFlag", "SetOfflineFlag", "AddFlag", "ReportFlag",
-            "SetBanReason", "SetBanDuration", "SetBanStatus"
-        }
-        for _, name in ipairs(flagSetters) do
-            for k, v in pairs(_G) do
-                if type(v) == "table" and v[name] then
-                    v[name] = nop
-                end
-            end
-        end
-
-        if Game then
-            if Game.IsBanned then Game.IsBanned = nopfalse end
-            if Game.IsFlagged then Game.IsFlagged = nopfalse end
-            if Game.GetOfflineFlag then Game.GetOfflineFlag = nopfalse end
-            if Game.GetBanInfo then Game.GetBanInfo = nopnil end
-        end
-    end)
-end
-
--- MODULE 10: Higgs Boson Disabler
-local function InitHiggsBoson()
-    pcall(function()
-        local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
-        if pc and slua.isValid(pc) then
-            if pc.HiggsBoson then
-                pc.HiggsBoson.bMHActive = false
-                pc.HiggsBoson.bCallPreReplication = false
-            end
-            if pc.HiggsBosonComponent then
-                pc.HiggsBosonComponent.bMHActive = false
-                pc.HiggsBosonComponent:ControlMHActive(0)
-            end
-        end
-
-        local hbc = require("GameLua.Mod.BaseMod.Common.Security.HiggsBosonComponent")
-        if hbc then
-            for k, v in pairs(hbc) do
-                if type(v) == "function" then
-                    hbc[k] = nop
-                end
-            end
-            if hbc.BlackList then
-                for k in pairs(hbc.BlackList) do
-                    hbc.BlackList[k] = nil
-                end
-            end
-        end
-
-        if _G.AvatarCheckCallback then
-            _G.AvatarCheckCallback.StartAvatarCheck = nop
-            _G.AvatarCheckCallback.OnReportItemID = nop
-            _G.AvatarCheckCallback.PostPlayerControllerLoginInit = function(pc)
-                if slua.isValid(pc) and pc.HiggsBosonComponent then
-                    pc.HiggsBosonComponent:ControlMHActive(0)
-                    pc.HiggsBosonComponent.bMHActive = false
-                end
-            end
-        end
-
-        if _G.GameSafeCallbacks then
-            for k, v in pairs(_G.GameSafeCallbacks) do
-                if type(v) == "function" then
-                    _G.GameSafeCallbacks[k] = nop
-                end
-            end
-        end
-
-        local stebp = import("STExtraBlueprintFunctionLibrary")
-        if stebp then
-            stebp.IsDevelopment = nopfalse
-        end
-    end)
-end
-
--- MODULE 11: Emulator & Device Spoofing
-local function InitSpoofing()
-    pcall(function()
-        if Device then
-            if Device.GetDeviceModel then
-                Device.GetDeviceModel = function() return "SM-G998B" end
-            end
-            if Device.GetDeviceManufacturer then
-                Device.GetDeviceManufacturer = function() return "samsung" end
-            end
-            if Device.GetDeviceOS then
-                Device.GetDeviceOS = function() return "Android" end
-            end
-            if Device.GetDeviceOSVersion then
-                Device.GetDeviceOSVersion = function() return "12" end
-            end
-            if Device.IsEmulator then
-                Device.IsEmulator = nopfalse
-            end
-            if Device.GetDeviceID then
-                Device.GetDeviceID = function() return "random_device_id_12345" end
-            end
-            if Device.GetMACAddress then
-                Device.GetMACAddress = function() return "02:00:00:00:00:01" end
-            end
-        end
-
-        if SystemInfo then
-            if SystemInfo.GetNetworkType then
-                SystemInfo.GetNetworkType = function() return "WIFI" end
-            end
-            if SystemInfo.GetNetworkOperator then
-                SystemInfo.GetNetworkOperator = function() return "T-Mobile" end
-            end
-            if SystemInfo.GetIPAddress then
-                SystemInfo.GetIPAddress = function() return "192.168.1.100" end
-            end
-        end
-    end)
-end
-
--- MODULE 12: Integrity Overrides (Final)
-local function InitIntegrityOverrides()
-    pcall(function()
-        if Game and Game.CheckIntegrity then
-            Game.CheckIntegrity = noptrue
-        end
-        if slua and slua.check_integrity then
-            slua.check_integrity = noptrue
-        end
-
-        local modules = {
-            "GameLua.Mod.BaseMod.Common.Security.HiggsBosonComponent",
-            "GameLua.Mod.BaseMod.Common.Security.TssSecurityModule",
-            "GameLua.Mod.BaseMod.Common.Security.AntiCheatModule",
-            "GameLua.Mod.BaseMod.Common.Security.MemoryIntegrityModule"
-        }
-        for _, mn in ipairs(modules) do
-            pcall(function()
-                local m = package.loaded[mn]
-                if m then
-                    for k, v in pairs(m) do
-                        if type(v) == "function" then
-                            m[k] = nop
-                        end
-                    end
-                    m.ControlMHActive = nop
-                    m.Tick = nop
-                    m.Report = nop
-                    m.Check = noptrue
-                    m.Validate = noptrue
-                end
-            end)
-        end
-    end)
-end
-
--- MODULE 13: Ban Status Killer
-local function InitBanKiller()
-    pcall(function()
-        local banFunctions = {
-            "IsBanned", "IsFlagged", "IsOfflineFlagged", "GetBanStatus",
-            "CheckBanStatus", "GetPlayerBanInfo", "IsAccountBanned"
-        }
-        for _, funcName in ipairs(banFunctions) do
-            for k, v in pairs(_G) do
-                if type(v) == "table" and v[funcName] then
-                    v[funcName] = nopfalse
-                end
-            end
-        end
-
-        if Game then
-            Game.IsBanned = nopfalse
-            Game.IsFlagged = nopfalse
-            Game.GetOfflineFlag = nopfalse
-            Game.GetBanInfo = nopnil
-        end
-
-        if LocalStorage then
-            if LocalStorage.GetBool then
-                local oldGet = LocalStorage.GetBool
-                LocalStorage.GetBool = function(key)
-                    if key and string.find(key, "ban") then
-                        return false
-                    end
-                    return oldGet(key)
-                end
-            end
-            if LocalStorage.SetBool then
-                local oldSet = LocalStorage.SetBool
-                LocalStorage.SetBool = function(key, val)
-                    if key and string.find(key, "ban") then
-                        return
-                    end
-                    return oldSet(key, val)
-                end
-            end
-        end
-    end)
-end
-
--- MODULE 14: Hardware & IP Spoofer
-local function InitHardwareSpoofer()
-    pcall(function()
-        local function randomString(len)
-            local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-            local result = ""
-            for i = 1, len do
-                result = result .. string.sub(chars, math.random(1, #chars), math.random(1, #chars))
-            end
-            return result
-        end
-
-        if Device then
-            if Device.GetDeviceID then
-                Device.GetDeviceID = function() return randomString(16) end
-            end
-            if Device.GetMACAddress then
-                Device.GetMACAddress = function() 
-                    return string.format("02:%02x:%02x:%02x:%02x:%02x", 
-                        math.random(0,255), math.random(0,255), math.random(0,255),
-                        math.random(0,255), math.random(0,255))
-                end
-            end
-            if Device.GetSerialNumber then
-                Device.GetSerialNumber = function() return randomString(12) end
-            end
-            if Device.GetAndroidID then
-                Device.GetAndroidID = function() return randomString(16) end
-            end
-        end
-
-        if NetUtil and NetUtil.GetLocalIP then
-            NetUtil.GetLocalIP = function() 
-                return string.format("192.168.%d.%d", math.random(1,254), math.random(1,254))
-            end
-        end
-        if NetUtil and NetUtil.GetPublicIP then
-            NetUtil.GetPublicIP = function() 
-                return string.format("%d.%d.%d.%d", math.random(1,255), math.random(1,255), 
-                    math.random(1,255), math.random(1,255))
-            end
-        end
-    end)
-end
-
--- MODULE 15: Telemetry Scrambler (Fake Legit Data)
-local function InitTelemetryScrambler()
-    pcall(function()
-        if _G.GameplayCallbacks then
-            local GC = _G.GameplayCallbacks
-            if GC.ReportPlayersPing then
-                local old = GC.ReportPlayersPing
-                GC.ReportPlayersPing = function(...)
-                    return old(...)
-                end
-            end
-            if GC.ReportPlayerFramePingRecord then
-                GC.ReportPlayerFramePingRecord = function()
-                    return { ping = math.random(20, 100), fps = math.random(30, 60) }
-                end
-            end
-        end
-
-        if NetUtil and NetUtil.SendPacket then
-            local oldSend = NetUtil.SendPacket
-            NetUtil.SendPacket = function(name, data)
-                if name == "report_players_ping" or name == "report_player_ip" then
-                    if type(data) == "table" then
-                        if data.ping then data.ping = math.random(20, 80) end
-                        if data.fps then data.fps = math.random(30, 60) end
-                        if data.ip then data.ip = "192.168." .. math.random(1,254) .. "." .. math.random(1,254) end
-                    end
-                end
-                return oldSend(name, data)
-            end
-        end
-    end)
-end
-
--- MODULE 16: Replay & Spectator Blocker
-local function InitReplayBlocker()
-    pcall(function()
-        if _G.GameplayCallbacks then
-            local GC = _G.GameplayCallbacks
-            GC.OnReplayRecord = nop
-            GC.OnSpectatorMode = nop
-            GC.SendReplayData = nop
-        end
-
-        local replay = package.loaded["GameLua.Mod.BaseMod.GamePlay.Replay.ReplaySubsystem"]
-        if replay then
-            for k, v in pairs(replay) do
-                if type(v) == "function" then
-                    replay[k] = nop
-                end
-            end
-            replay.IsReplayRecording = nopfalse
-            replay.CanRecord = nopfalse
-        end
-
-        local spec = package.loaded["GameLua.Mod.BaseMod.GamePlay.Spectator.SpectatorSubsystem"]
-        if spec then
-            spec.OnSpectatorJoin = nop
-            spec.OnSpectatorLeave = nop
-            spec.ReportSpectatorData = nop
-        end
-    end)
-end
-
--- MODULE 17: Memory Cleaner (Periodic Flag Reset)
-local function InitMemoryCleaner()
-    pcall(function()
-        local function cleanFlags()
-            for k, v in pairs(package.loaded) do
-                if type(v) == "table" then
-                    if v.FlagCount then v.FlagCount = 0 end
-                    if v.OfflineFlagCount then v.OfflineFlagCount = 0 end
-                    if v.BanCount then v.BanCount = 0 end
-                    if v.bIsBanned then v.bIsBanned = false end
-                    if v.bIsFlagged then v.bIsFlagged = false end
-                    if v.bOfflineFlag then v.bOfflineFlag = false end
-                    if v.bReported then v.bReported = false end
-                end
-            end
-        end
-
-        if slua and slua.addTimer then
-            slua.addTimer(30000, true, cleanFlags)
-        elseif _G.Timer and _G.Timer.SetInterval then
-            _G.Timer.SetInterval(cleanFlags, 30000)
-        else
-            if _G.OnUpdate then
-                local oldUpdate = _G.OnUpdate
-                local counter = 0
-                _G.OnUpdate = function(delta)
-                    counter = counter + delta
-                    if counter >= 30 then
-                        counter = 0
-                        cleanFlags()
-                    end
-                    if oldUpdate then oldUpdate(delta) end
-                end
-            end
-        end
-    end)
-end
-
--- Master initializer (shuffled order for stealth)
-local function InitAllBypasses()
-    if _G.BypassRunning then return end
-    _G.BypassRunning = true
-
-    pcall(function()
-        local modules = {
-            InitAdvancedDomainBlocker,
-            InitHookSystem,
-            InitTssSdkBlocker,
-            InitLogBlocker,
-            InitScannerBlocker,
-            InitAntiReport,
-            InitGameplayBypass,
-            InitMemoryProtection,
-            InitAntiFlag,
-            InitHiggsBoson,
-            InitSpoofing,
-            InitIntegrityOverrides,
-            InitBanKiller,
-            InitHardwareSpoofer,
-            InitTelemetryScrambler,
-            InitReplayBlocker,
-            InitMemoryCleaner
-        }
-
-        -- Shuffle
-        for i = #modules, 2, -1 do
-            local j = math.random(i)
-            modules[i], modules[j] = modules[j], modules[i]
-        end
-
-        for _, initFunc in ipairs(modules) do
-            initFunc()
-        end
-    end)
-
-    if debug and debug.getinfo then
-        local old_getinfo = debug.getinfo
-        debug.getinfo = function(...)
-            local info = old_getinfo(...)
-            if info and info.source and string.find(info.source, "1.lua") then
-                info.source = "(hidden)"
-            end
-            return info
-        end
-    end
-
-    _G.BypassLoaded = true
-end
-
--- Auto-run bypass
-if Client then
-    InitAllBypasses()
 end
 
 -- ============================================================
@@ -910,6 +27,13 @@ if _G.Mod_iPadViewDistance == nil then _G.Mod_iPadViewDistance = 90 end
 if _G.Mod_Skin_Enabled == nil then _G.Mod_Skin_Enabled = false end
 if _G.Mod_PBCWallhack_Enabled == nil then _G.Mod_PBCWallhack_Enabled = false end
 
+if _G.Mod_Chams_GreenEnabled == nil then _G.Mod_Chams_GreenEnabled = false end
+if _G.Mod_Chams_YellowEnabled == nil then _G.Mod_Chams_YellowEnabled = false end
+if _G.Mod_Chams_GreenRGB == nil then _G.Mod_Chams_GreenRGB = {R=0, G=255, B=0, A=255} end
+if _G.Mod_Chams_YellowRGB == nil then _G.Mod_Chams_YellowRGB = {R=255, G=255, B=0, A=255} end
+
+_G.CheatsEnabled = true
+
 local require = require
 local import  = import
 local isValid = slua.isValid
@@ -922,7 +46,16 @@ local math = math
 local string = string
 local os = os
 
--- safe_require (unchanged)
+-- ============================================================
+-- NOP FUNCTIONS (used by features and bypass)
+-- ============================================================
+local function nop() end
+local function nopt() return {} end
+local function nopnil() return nil end
+local function noptrue() return true end
+local function nopfalse() return false end
+local function nopstr() return "" end
+
 local function safe_require(path)
     local ok, mod = pcall(require, path)
     return ok and mod or nil
@@ -930,6 +63,687 @@ end
 
 local ok_gd, GameplayData = pcall(require, "GameLua.GameCore.Data.GameplayData")
 if not ok_gd then GameplayData = nil end
+
+-- ============================================================
+-- 16‑LAYER ULTIMATE BYPASS (from bbb.lua)
+-- ============================================================
+local function ApplyAllBypasses()
+    -- Local helpers and nop definitions (already defined above)
+    -- But we'll redefine them inside to be safe, or use the ones already defined.
+    -- We'll use the same nop functions from above.
+    local pcall = pcall
+    local ipairs = ipairs
+
+    -- 1. CLIENTENTRY BYPASS
+    local function ClientEntryBypass()
+        pcall(function()
+            if _G.Tss then _G.Tss.SendSkdData = nop; _G.Tss.OnRecvData = nop end
+            if _G.TssManager then _G.TssManager.SendSkdData = nop; _G.TssManager.OnRecvData = nop end
+            if NetUtil then
+                NetUtil.SendTss = nop; NetUtil.OnTssRsp = nop; NetUtil.GEMReportSubEvent = nop
+                NetUtil.ShowSDKErrorNotice = nop; NetUtil.OnDSServerConnectionErrorNotify = nop
+                NetUtil.check_dh_packet_key = nop
+                NetUtil.OnNetworkEvent = function(eventID, eventParam, eventParam2)
+                    if eventParam == "CheatDetected" or eventParam == "IdipBan" then return end
+                end
+                NetUtil.OnConnected = function(isConnected, nReason) if not isConnected then return end end
+                NetUtil.OnStateChange = function(state) if state == 4 then return end end
+                NetUtil.OnDisconnected = nop; NetUtil.CheckTime = nop
+                NetUtil.StartCheckDSActive = nop; NetUtil.StopCheckDSActive = nop
+                NetUtil.StartCheckEnterBattle = nop; NetUtil.StopCheckEnterBattle = nop
+                NetUtil.tryConnect = nop; NetUtil.ShowConnectionMsgBox = nop
+                NetUtil.LogOut = nop; NetUtil.LogoutNoRefresh = nop
+                NetUtil.ClearAutoReconnectParam = nop; NetUtil.ClearAutoReconnectTimer = nop
+                NetUtil.GetAutoReconnectParam = function() return { times = 0 } end
+            end
+            if UnrealNet then
+                UnrealNet.HandleNetworkExceptionReport = nop
+                UnrealNet.HandleNetworkException = nop
+                UnrealNet.HandleNetworkConnectionClosed = nop
+                UnrealNet.HandleSpectateException = nop
+                UnrealNet.HandleBattleExceptionReport = nop
+                UnrealNet.OnNetRepSerializeError = nop
+                UnrealNet.FilterNetworkException = function(ExceptionType, ErrorMessage)
+                    if ErrorMessage and type(ErrorMessage) == "string" then
+                        local em = ErrorMessage:lower()
+                        if em:find("cheat") or em:find("ban") or em:find("security") or
+                           em:find("integrity") or em:find("violation") or em:find("hack") or
+                           em:find("flag") or em:find("detect") or em:find("verify") then
+                            return false
+                        end
+                    end
+                    return false
+                end
+                UnrealNet.FailureReceivedReason = UnrealNet.FailureReceivedReason or {}
+                UnrealNet.FailureReceivedReason.CheatDetected = "BYPASSED"
+                UnrealNet.HandleNetworkEvent = function(EventType, EventMessage)
+                    if EventType == "NetworkEstablished" or EventType == "NetworkRecovered" then
+                    else return end
+                end
+                UnrealNet.RepListMismatchDetectTrigger = nop
+                UnrealNet.RetrunToLobbyFromDisconnect = nop
+                UnrealNet.NetworkExceptionAddEnterBattleStage = nopstr
+                UnrealNet.IsNeedShowMsgBox = nopfalse
+            end
+            if Client then
+                Client.SetTssNetworkStatus = nop; Client.GEMReportEnterLobbyEvent = nop
+                Client.TPerforPlatDisconnectReport = nop
+                Client.IsConnected = function(NetInterface) return true end
+                Client.ConnectToURL = nop; Client.Disconnect = nop; Client.ReturnToLobby = nop
+                Client.GetUnrealNetworkStatus = nopstr
+                Client.MD5LuaString = function(str) return "BYPASSED_MD5" end
+                Client.GetDSVersion = function() return "999.999.999" end
+                Client.IsInReplayState = nopfalse
+            end
+            if NetManager then
+                NetManager.ProcConnected = nop; NetManager.bConnected = true
+                NetManager.ProcRespondMsg = nop; NetManager.isLogMsgAfterLogin = false
+                NetManager.logMsgMap = {}
+            end
+            if _G.Net then
+                _G.Net.SendPacket = function(LuaStateWrapper, NetInterface, msgName, ...)
+                    local blockedPackets = {"report_", "Report", "tlog", "Tlog", "TLog", "exception", "Exception",
+                        "ban", "Ban", "cheat", "Cheat", "security", "Security", "verify", "Verify",
+                        "check", "Check", "detect", "Detect", "flag", "Flag"}
+                    if msgName and type(msgName) == "string" then
+                        for _, bp in ipairs(blockedPackets) do
+                            if msgName:find(bp) then return nil end
+                        end
+                    end
+                    return true
+                end
+            end
+            if EventSystem then
+                local oldPost = EventSystem.postEvent
+                EventSystem.postEvent = function(eventType, eventID, ...)
+                    if eventID and type(eventID) == "string" then
+                        local blocked = {"SECURITY", "CHEAT", "BAN", "REPORT", "FLAG"}
+                        for _, be in ipairs(blocked) do
+                            if eventID:find(be) then return end
+                        end
+                    end
+                    if oldPost then oldPost(eventType, eventID, ...) end
+                end
+            end
+            local logFuncs = {"log", "log_warning", "log_error", "log_shipping_client", "log_format", "log_tree"}
+            for _, funcName in ipairs(logFuncs) do
+                if _G[funcName] then
+                    _G[funcName] = function(...)
+                        local args = {...}
+                        for _, arg in ipairs(args) do
+                            if type(arg) == "string" and (
+                                arg:find("cheat") or arg:find("security") or arg:find("ban") or
+                                arg:find("detect") or arg:find("verify") or arg:find("integrity")
+                            ) then return end
+                        end
+                    end
+                end
+            end
+            if LogUtil then
+                LogUtil.SetForceLog = nop; LogUtil.SetLogTreeEnable = nop; LogUtil.SetWriteLog = nop
+            end
+            if sandbox then sandbox.LogError = nop; sandbox.LogWarning = nop end
+        end)
+        print("[BYPASS] ✅ ClientEntry bypassed!")
+    end
+
+    -- 2. HIGGSBOSONCOMPONENT BYPASS
+    pcall(function()
+        if CHiggsBosonComponent then
+            CHiggsBosonComponent.ReceiveBeginPlay = nop
+            CHiggsBosonComponent.StaticShowSecurityAlertInDev = nop
+            CHiggsBosonComponent.ShowABCD = nop
+            CHiggsBosonComponent._ClientShowSecurityAlertWindow = nop
+            CHiggsBosonComponent._ReportChatRobot = nop
+            CHiggsBosonComponent.SendAntiDataFlow = nop
+            CHiggsBosonComponent.SendHitFireBtnFlow = nop
+            CHiggsBosonComponent.OnBattleResult = nop
+            CHiggsBosonComponent.SendHisarData = nop
+            CHiggsBosonComponent.RPC_Client_ShowSecurityAlertWindow = nop
+            CHiggsBosonComponent.RPC_Server_TellServerName = nop
+            CHiggsBosonComponent.RecordStrategyTimestampInReplay = nop
+            CHiggsBosonComponent.SkipAlertServer = nop
+            CHiggsBosonComponent.SetClientAlertWindowEnabled = nop
+            CHiggsBosonComponent.IsCharacterOwnerWerewolf = nopfalse
+            CHiggsBosonComponent.IsCharacterOwnerButcher = nopfalse
+            CHiggsBosonComponent._ProcessReportChatRobotQueue = nop
+            CHiggsBosonComponent.LuaNotifySecurityAbnormalJump = nop
+            CHiggsBosonComponent.bSkipAlertServer = true
+            bIsSkipAlertServer = true
+            bSkipUploadNoschat = true
+            _nReportNosChatTimerID = nil
+            _nReportNosChatMessageID = 0
+            _tReportNosChatQueue = {}
+            LastTimeHandleAlert = -1
+            print("[BYPASS] ✅ HiggsBosonComponent bypassed!")
+        end
+    end)
+
+    -- 3. CLIENTHAWKEYEPATROLSUBSYSTEM BYPASS
+    pcall(function()
+        if ClientHawkEyePatrolSubsystem then
+            ClientHawkEyePatrolSubsystem._OnHawkSync = nop
+            ClientHawkEyePatrolSubsystem._OnHawkReportSuccess = nop
+            ClientHawkEyePatrolSubsystem._OnRecvInspectorBroadcastCount = nop
+            ClientHawkEyePatrolSubsystem.ReportCheat = nop
+            ClientHawkEyePatrolSubsystem.RequestImprison = nop
+            ClientHawkEyePatrolSubsystem.SendReportTLog = nop
+            ClientHawkEyePatrolSubsystem.IsDuringHawkEyePatrol = nopfalse
+            ClientHawkEyePatrolSubsystem._CollectBeWatchedPlayerInfo = nop
+            ClientHawkEyePatrolSubsystem.HasReported = noptrue
+            ClientHawkEyePatrolSubsystem.GetBeWatchedPlayerInfo = nopnil
+            ClientHawkEyePatrolSubsystem._OnPlayerKilledOtherPlayer = nop
+            ClientHawkEyePatrolSubsystem._StartFrameUIRefreshTimer = nop
+            ClientHawkEyePatrolSubsystem.ExitWatching = nop
+            ClientHawkEyePatrolSubsystem.WantMatchNextPatrol = nop
+            ClientHawkEyePatrolSubsystem._InitHawkEyePatrolSubsystem = function(self)
+                self._bHasInitialized = true; self._bHasReported = true
+            end
+            ClientHawkEyePatrolSubsystem._StartHideUITimer = nop
+            ClientHawkEyePatrolSubsystem._StartShowDistanceUITimer = nop
+            ClientHawkEyePatrolSubsystem._StartCloseBattleEndedTipsTimer = nop
+            ClientHawkEyePatrolSubsystem._StartBattleTimeUsageTimer = nop
+            ClientHawkEyePatrolSubsystem._StartQuitVoiceRoomTimer = nop
+            ClientHawkEyePatrolSubsystem._StartExitGameTimer = nop
+            ClientHawkEyePatrolSubsystem._CloseExitGameTimer = nop
+            ClientHawkEyePatrolSubsystem._CreateOvertimerTimerForNextPatrol = nop
+            ClientHawkEyePatrolSubsystem.ClearNextPatrolOvertimeTimer = nop
+            ClientHawkEyePatrolSubsystem.ReturnLobbyAndOpenH5 = nop
+            ClientHawkEyePatrolSubsystem.ForceNeverCloseBattleEndedTips = nop
+            ClientHawkEyePatrolSubsystem.CheckShowReportedTips = nopfalse
+            ClientHawkEyePatrolSubsystem.TryShowReportedTips = nop
+            ClientHawkEyePatrolSubsystem.ShowWatchEndedTips = nop
+            ClientHawkEyePatrolSubsystem.HasShownWatchEndedTips = noptrue
+            ClientHawkEyePatrolSubsystem.OnShowWatchEndedTips = nop
+            ClientHawkEyePatrolSubsystem.OnClickLowerLeftExitWatching = nop
+            ClientHawkEyePatrolSubsystem.OnClickBottomRightOpenReportWindow = nop
+            ClientHawkEyePatrolSubsystem._MarkHasReported = nop
+            ClientHawkEyePatrolSubsystem.GetForbidNextPatrolRemainingTimeInSeconds = function() return 0 end
+            ClientHawkEyePatrolSubsystem.GetUsedDailyTimeInSeconds = function() return 0 end
+            ClientHawkEyePatrolSubsystem.GetInspectorBroadcastCount = function() return -1 end
+            ClientHawkEyePatrolSubsystem.GetMaxInspectorBroadcastCount = function() return 0 end
+            ClientHawkEyePatrolSubsystem.CanInspectorBroadcast = nopfalse
+            ClientHawkEyePatrolSubsystem.IsCharacterLocationShouldDraw = nopfalse
+            ClientHawkEyePatrolSubsystem.InitHawkEyePatrolSubsystem = nop
+            ClientHawkEyePatrolSubsystem._PostConstruct = function(self)
+                self._bHasInitialized = true; self._bHasReported = true; self.nInspectorBroadcastCount = -1
+            end
+            ClientHawkEyePatrolSubsystem.OnRelease = nop
+            ClientHawkEyePatrolSubsystem._bHasInitialized = true
+            ClientHawkEyePatrolSubsystem._bHasReported = true
+            ClientHawkEyePatrolSubsystem._bHasShownWatchEndedTips = true
+            ClientHawkEyePatrolSubsystem.bShowBeReportedTips = true
+            ClientHawkEyePatrolSubsystem.nInspectorBroadcastCount = -1
+            print("[BYPASS] ✅ ClientHawkEyePatrolSubsystem bypassed!")
+        end
+    end)
+
+    -- 4. CLIENTBANLOGIC BYPASS
+    pcall(function()
+        if ClientBanLogic then
+            ClientBanLogic.ReqBanInfo = nop
+            ClientBanLogic.OnVoiceSwitchNotify = nop
+            ClientBanLogic.OnVoiceBanNotify = nop
+            ClientBanLogic.OnRealTimeVoiceBanNotify = nop
+            ClientBanLogic.OnVoiceBanSuccess = nop
+            ClientBanLogic.TryOpenVoice = function()
+                EventSystem:postEvent(EVENTTYPE_INGAME_BAN, EVENTID_INGAME_BAN_FORBID_VOICE, false)
+            end
+            ClientBanLogic.IsVoiceReportEnable = nopfalse
+            ClientBanLogic.OnSyncMicSuspicious = nop
+            ClientBanLogic.OnSyncMicPreFilter = nop
+            ClientBanLogic.OnSyncBanInfo = nop
+            ClientBanLogic.OnNotifyWarningTips = nop
+            ClientBanLogic.VoiceBanEndTime = 0
+            ClientBanLogic.bEnableVoiceReport = false
+            ClientBanLogic.SuspiciousFlag = 0
+            ClientBanLogic.Reason = ""
+            ClientBanLogic.IsTranslated = false
+            print("[BYPASS] ✅ ClientBanLogic bypassed!")
+        end
+    end)
+
+    -- 5. REALTIMEBAN BYPASS
+    pcall(function()
+        if RealTimeBan then
+            RealTimeBan.Init = function() print("[BYPASS] RealTimeBan.Init blocked!") return end
+            RealTimeBan.OnPlayerWithRealTimeBan = nop
+            RealTimeBan.OnSyncPlayerInfo = nop
+            RealTimeBan.HandleEnterGameModeFightingState = nop
+            RealTimeBan.ShowAlias = nop
+            RealTimeBan.SetOnRankInspectorUID = nop
+            RealTimeBan.IsUIDOnRankInspector = nopfalse
+            RealTimeBan.GetUIDInspectorRank = function() return -1 end
+            RealTimeBan.SetInspectorBroadcastCountUID = nop
+            RealTimeBan.GetUIDInspectorBroadcastCount = function() return -1 end
+            RealTimeBan.GetTipsIDOffset = function() return 0 end
+            RealTimeBan.GetTipsIDOffsetWithUID = function() return 0 end
+            RealTimeBan.GetTipsIDOffsetInspector = function() return 0 end
+            RealTimeBan.GMShowAlias = nop
+            RealTimeBan.tOnRankInspectorUIDSet = {}
+            RealTimeBan.tInspectorRankUIDSet = {}
+            RealTimeBan.tInspectorBroadcastCountUIDSet = {}
+            RealTimeBan.MaxAliasLevel = -1
+            RealTimeBan.CurrentAlias = nil
+            RealTimeBan.CurrentName = nil
+            RealTimeBan.is_onrank_inspector = false
+            RealTimeBan.inspector_rank = -1
+            RealTimeBan.bHasOldAlias = false
+            RealTimeBan.ShowTipsAliasConfig = {}
+            RealTimeBan.DelayTime = {}
+            RealTimeBan.OldShowTipsAlias = 0
+            print("[BYPASS] ✅ RealTimeBan bypassed!")
+        end
+    end)
+
+    -- 6. GOKUBA BYPASS
+    pcall(function()
+        local Gokuba = package.loaded["GameLua.Mod.BaseMod.Client.Security.Gokuba"]
+        if Gokuba then
+            Gokuba.ForwardFeature = function() return {0,0,0,0,0} end
+            Gokuba.InitGokubaLogic = nop
+            if Gokuba.TimerHandle then
+                local time_ticker = require("common.time_ticker")
+                time_ticker.RemoveTimer(Gokuba.TimerHandle)
+                Gokuba.TimerHandle = nil
+            end
+            for k, v in pairs(Gokuba) do
+                if type(v) == "function" and (
+                    k:find("Init") or k:find("Start") or k:find("Check") or
+                    k:find("Scan") or k:find("Report") or k:find("Forward") or
+                    k:find("Feature") or k:find("Detect")
+                ) then
+                    Gokuba[k] = nop
+                end
+            end
+            print("[BYPASS] ✅ Gokuba bypassed!")
+        end
+        if _G.GokubaLogic then
+            _G.GokubaLogic.ForwardFeature = nop
+            _G.GokubaLogic.InitGokubaLogic = nop
+        end
+    end)
+
+    -- 7. RACINGANTICHEATLOGIC BYPASS
+    pcall(function()
+        if RacingAntiCheatLogic then
+            RacingAntiCheatLogic.HandleRacingEnter = nop
+            RacingAntiCheatLogic.HandleRacingStart = nop
+            RacingAntiCheatLogic.HandleRacingEnd = nop
+            RacingAntiCheatLogic.StartDetectTimer = nop
+            RacingAntiCheatLogic.StopDetectTimer = nop
+            RacingAntiCheatLogic.DetectVehicleFloating = nop
+            RacingAntiCheatLogic.HandleFloatingCheat = nop
+            RacingAntiCheatLogic.SetIgnoreFloating = nop
+            RacingAntiCheatLogic.HandlePlayerPassCheckBelt = nop
+            RacingAntiCheatLogic.HandleSpeedCheat = nop
+            RacingAntiCheatLogic._CreateVehicleData = function() return {} end
+            RacingAntiCheatLogic.vehicleDataMap = {}
+            RacingAntiCheatLogic.detectTimer = nil
+            RacingAntiCheatLogic.config = {FloatingDistLimit = 99999, FloatingTimeLimit = 99999, CheckPassIntervalLimit = 99999}
+            print("[BYPASS] ✅ RacingAntiCheatLogic bypassed!")
+        end
+    end)
+
+    -- 8. CLIENTREPORTPLAYERSUBSYSTEM BYPASS
+    pcall(function()
+        if ClientReportPlayerSubsystem then
+            ClientReportPlayerSubsystem.OnInit = nop
+            ClientReportPlayerSubsystem._OnPlayerKilledOtherPlayer = nop
+            ClientReportPlayerSubsystem._RecordFatalDamager = nop
+            ClientReportPlayerSubsystem._RecordMurdererFromDeathReplayData = nop
+            ClientReportPlayerSubsystem._OnSyncFatalDamage = nop
+            ClientReportPlayerSubsystem._SyncBattleResult = nop
+            ClientReportPlayerSubsystem._OnBattleResult = nop
+            ClientReportPlayerSubsystem._OnShowQuickReportMutualExclusiveUI = nop
+            ClientReportPlayerSubsystem._OnHideQuickReportMutualExclusiveUI = nop
+            ClientReportPlayerSubsystem._StartCheckGameModeTypeTimer = nop
+            ClientReportPlayerSubsystem._CheckGameModeType = nop
+            ClientReportPlayerSubsystem._StartCheckCurrentNotInTeamHistoricalTeammateTimer = nop
+            ClientReportPlayerSubsystem._CheckCurrentNotInTeamHistoricalTeammate = nop
+            ClientReportPlayerSubsystem._RecordTeammatePlayerInfo = nop
+            ClientReportPlayerSubsystem._IsHealthStatusKilled = nopfalse
+            ClientReportPlayerSubsystem.GetFatalDamagerMap = function() return {} end
+            ClientReportPlayerSubsystem.GetFatalDamagerMapSize = function() return 0 end
+            ClientReportPlayerSubsystem.GetName2InfoMap = function() return {} end
+            ClientReportPlayerSubsystem.GetCachedTeammateName2InfoMap = function() return {} end
+            ClientReportPlayerSubsystem.GetTeammateName2InfoMapDuringBattle = function() return {} end
+            ClientReportPlayerSubsystem.GetCurrentNotInTeamHistoricalTeammateMap = function() return {} end
+            ClientReportPlayerSubsystem.GetInTeamIndexFromHistoricalTeammateInfo = function() return -1 end
+            ClientReportPlayerSubsystem.IsGameModeTypeTeamDeathMatch = nopfalse
+            ClientReportPlayerSubsystem.GetGameModeType = function() return -1 end
+            ClientReportPlayerSubsystem.GetMainModeID = function() return -1 end
+            ClientReportPlayerSubsystem.GetSubModeID = function() return -1 end
+            ClientReportPlayerSubsystem.EnableRecordFatalDamage = nop
+            ClientReportPlayerSubsystem._tKnockDownerMap = {}
+            ClientReportPlayerSubsystem._tMurdererMap = {}
+            ClientReportPlayerSubsystem._ds2history = {}
+            ClientReportPlayerSubsystem._tMapCurrentNotInTeamHistoricalTeammate = {}
+            ClientReportPlayerSubsystem._tTeammateName2InfoMap = {}
+            ClientReportPlayerSubsystem._bEnableRecordFatalDamage = false
+            ClientReportPlayerSubsystem._bIsGameModeTypeTeamDeathMatch = false
+            ClientReportPlayerSubsystem._nGameModeType = -1
+            ClientReportPlayerSubsystem._nMainModeID = -1
+            ClientReportPlayerSubsystem._nSubModeID = -1
+            ClientReportPlayerSubsystem._nCheckTDMGameModeTypeTimer = nil
+            ClientReportPlayerSubsystem._nCurrentNotInTeamHistoricalTeammateTimer = nil
+            print("[BYPASS] ✅ ClientReportPlayerSubsystem bypassed!")
+        end
+    end)
+
+    -- 9. DSREPORTPLAYERSUBSYSTEM BYPASS
+    pcall(function()
+        if DSReportPlayerSubsystem then
+            DSReportPlayerSubsystem.OnInit = nop
+            DSReportPlayerSubsystem._OnNearDeathOrRescued = nop
+            DSReportPlayerSubsystem._OnPlayerSettlementStart = nop
+            DSReportPlayerSubsystem._OnTeammateDamage = nop
+            DSReportPlayerSubsystem._OnCharacterDied = nop
+            DSReportPlayerSubsystem._OnPlayerReconnect = nop
+            DSReportPlayerSubsystem._RecordFatalDamager = nop
+            DSReportPlayerSubsystem._RecordTeammateMurderer = nop
+            DSReportPlayerSubsystem._AddMLKillerUIDToBattleResult = nop
+            DSReportPlayerSubsystem._AddFatalDamagerMapToBattleResult = nop
+            DSReportPlayerSubsystem._AddKnockDownerToBattleResult = nop
+            DSReportPlayerSubsystem._AddKillerToBattleResult = nop
+            DSReportPlayerSubsystem._AddTeammateMurderToBattleResult = nop
+            DSReportPlayerSubsystem._SaveHistoricalTeammateInfo = nop
+            DSReportPlayerSubsystem._SyncFatalDamagerMap = nop
+            DSReportPlayerSubsystem._AddGameModeTypeToBattleResult = nop
+            DSReportPlayerSubsystem._UpdateMLAIUID = nop
+            DSReportPlayerSubsystem._AddEnemyMapToBattleResult = nop
+            DSReportPlayerSubsystem._OnNoNetStartUpDoor = nop
+            DSReportPlayerSubsystem._AssignTeammateInTeamIndex = nop
+            DSReportPlayerSubsystem._FindCacheByUID = function(self, nUID, bAddIfNotExists)
+                if bAddIfNotExists then return {} end
+                return nil
+            end
+            DSReportPlayerSubsystem._GetFatalDamagerMap = function() return {} end
+            DSReportPlayerSubsystem._IsBattleResultTableValid = nopfalse
+            DSReportPlayerSubsystem._IsHealthStatusKilled = nopfalse
+            DSReportPlayerSubsystem._tUID2InfoMap = {}
+            DSReportPlayerSubsystem.nNoStartUpDoorNum = 0
+            print("[BYPASS] ✅ DSReportPlayerSubsystem bypassed!")
+        end
+    end)
+
+    -- 10. TLOG_REPORT_UTILS BYPASS
+    pcall(function()
+        if tlog_report_utils then
+            tlog_report_utils.ReportTLogEvent = nop
+            tlog_report_utils.IsCanReportLobbyEvent = nopfalse
+            tlog_report_utils.IsBusinessReport = nopfalse
+            tlog_report_utils.SetMarketStayUpdateEnable = nop
+            tlog_report_utils.GetMarketStayUpdateEnable = nopfalse
+            tlog_report_utils.SetBusinessReportEnable = nop
+            tlog_report_utils.SendTLogReportImmediate = nop
+            tlog_report_utils.SetTlogBeginType = nop
+            tlog_report_utils.SetTlogEndType = nop
+            _G.SendTLogReportImmediate = nop
+            _extraTlogReportEnableCfg = {}
+            _isCanReportMarketStay = false
+            _BusinessReportEnable = false
+            _isInitConfig = true
+            start_timestamp_map = {}
+            print("[BYPASS] ✅ tlog_report_utils bypassed!")
+        end
+    end)
+
+    -- 11. TOOLREPORTUTIL BYPASS
+    pcall(function()
+        if ToolReportUtil then
+            ToolReportUtil.GetReportSwitch = nopfalse
+            ToolReportUtil.GetPackageInfo = nopnil
+            ToolReportUtil.ReParseError = function(error, reportType) return error or "" end
+            ToolReportUtil.IsReleaseVersion = noptrue
+            ToolReportUtil.IsWhite = nopfalse
+            ToolReportUtil.IsXPcallOpenInBattle = nopfalse
+            ToolReportUtil.IsClientToolOpen = nopfalse
+            MyOpenID = false
+            MyUID = false
+            VersionInfo = nil
+            print("[BYPASS] ✅ ToolReportUtil bypassed!")
+        end
+    end)
+
+    -- 12. DS SECURITY TLOG BYPASS
+    pcall(function()
+        if DSSecurityTLogSubsystem then
+            DSSecurityTLogSubsystem.OnInit = nop
+            DSSecurityTLogSubsystem._OnReportServerJumpFlow = nop
+            DSSecurityTLogSubsystem._OnDevAlert = nop
+            DSSecurityTLogSubsystem._InitWhenEditor = nop
+            DSSecurityTLogSubsystem._nInitGameSafeCallbacksTimer = nil
+            print("[BYPASS] ✅ DSSecurityTLogSubsystem bypassed!")
+        end
+        if NetUtil and NetUtil.SendPacket then
+            local orig = NetUtil.SendPacket
+            NetUtil.SendPacket = function(packetName, ...)
+                if packetName == "ReportServerJumpFlow" then return end
+                return orig(packetName, ...)
+            end
+        end
+    end)
+
+    -- 13. CHARGEJUMP COMPONENT BYPASS (prevents abnormal jump reports)
+    pcall(function()
+        if ChargeJumpComponent then
+            local origDoJump = ChargeJumpComponent.DoJump
+            ChargeJumpComponent.DoJump = function(self, UploadChargeTime)
+                if not self:IsCharging() then return end
+                local uOwner = self:GetOwner()
+                if sluaIsValid(uOwner) then
+                    local bJumpStateValid = uOwner:AllowState(EPawnState.Jump, false) and uOwner:CanJump()
+                    local bPoseValid = uOwner.PoseState == ESTEPoseState.Stand or uOwner.PoseState == ESTEPoseState.Sprint or uOwner:HasState(EPawnState.Shoveling)
+                    if bJumpStateValid and bPoseValid then
+                        local ChargeTime = UploadChargeTime and UploadChargeTime or UGameplayStatics.GetTimeSeconds(CGameWorld) - self.ChargeTimeStamp
+                        ChargeTime = math.min(ChargeTime, ChargeJumpComponent.Config.MaxChargeTime)
+                        local JumpZ = ChargeJumpComponent.Config.BaseJumpZ + ChargeTime * ChargeJumpComponent.Config.JumpZPerSecond
+                        uOwner:EnterState(EPawnState.Jump)
+                        uOwner.STCharacterMovement.Velocity.Z = JumpZ
+                        uOwner.STCharacterMovement:SetMovementMode(EMovementMode.MOVE_Falling, 0)
+                        -- BLOCK abnormal jump report
+                        if Client and uOwner:IsLocallyControlled() then
+                            self:ServerRPC_DoJump(ChargeTime)
+                        end
+                    elseif Client and uOwner:IsLocallyControlled() then
+                        self:ServerRPC_JumpFail()
+                    end
+                end
+                self:EndCharge()
+            end
+            print("[BYPASS] ✅ ChargeJumpComponent bypassed!")
+        end
+    end)
+
+    -- 14. CORONALAB TELEMETRY BYPASS
+    pcall(function()
+        _G.LocalMain = function()
+            print("[BYPASS] CoronaLab telemetry timer blocked!")
+            return
+        end
+        local uOuterController = slua_GameFrontendHUD:GetPlayerController()
+        if sluaIsValid(uOuterController) and uOuterController.AddGameTimer then
+            local orig = uOuterController.AddGameTimer
+            uOuterController.AddGameTimer = function(interval, bLoop, func, ...)
+                if interval == 30 and bLoop == true then
+                    return nil
+                end
+                return orig(interval, bLoop, func, ...)
+            end
+        end
+        if CHiggsBosonComponent then
+            CHiggsBosonComponent.SecurityCoronaLabClientDataPointer = function(self) return nil end
+            CHiggsBosonComponent.SetFloatValueByName = function(self, name, value) return end
+        end
+        print("[BYPASS] ✅ CoronaLab telemetry bypassed!")
+    end)
+
+    -- 15. LOGIN_MODULE BYPASS
+    pcall(function()
+        if login_module then
+            login_module["ban-login"] = function() return end
+            login_module["idip-kick-out"] = function() return end
+            login_module.aq_ban = function() return end
+            login_module["device-in-blacklist"] = function() return end
+            login_module.device_num_limit = function() return end
+            login_module["register-forbidden"] = function() return end
+            login_module["low-version"] = function() return end
+            login_module["not-in-white-list"] = function() return end
+            login_module.Login_Failed = function() return end
+            login_module.aas_ban = function() return end
+            login_module.PakMonitorStart = function(EnableMode) return end
+            login_module.SetupFilenameHideKeywords = function() return end
+            login_module.on_login_failed = function(conn_idx, reason, banInfo, banTime, uid, extra_table) return end
+            login_module.DelaybanLoginCancelCallback = function() return end
+            print("[BYPASS] ✅ login_module bypassed!")
+        end
+    end)
+
+    -- 16. UI_COMPLAINT BYPASS
+    pcall(function()
+        if ui_complaint then
+            ui_complaint.SubmitReportData = function(self) self:CloseWindow(false) return end
+            ui_complaint._OnClickReport = function(self) return end
+            ui_complaint._AddCommonTypesOfPlayerForReport = function(self) return end
+            ui_complaint.AddPlayerForReport = function(self, ...) return end
+            ui_complaint.GetSelectedReasonAsArray = function(self) return {} end
+            ui_complaint.GetSelectedSubReasonAsArray = function(self) return {} end
+            ui_complaint.BlockPlayerChat = function(self) return end
+            ui_complaint.IsBlockChatCheck = function(self) return false end
+            ui_complaint.CheckBoxBlack = function(self, bCheckState) return end
+            ui_complaint.UpdateMatchBlackList = function(self) return end
+            ui_complaint._SelectedReasonSet = {}
+            ui_complaint._SelectedSubReasonSet = {}
+            ui_complaint._SelectedCheatSubReasonSet = {}
+            ui_complaint._tPlayerName2InfoMap = {}
+            ui_complaint._tPlayerNamesArray = {}
+            print("[BYPASS] ✅ ui_complaint bypassed!")
+        end
+        local LogicComplaint = require("client.logic.battle.logic_complaint")
+        if LogicComplaint and LogicComplaint.Submit then
+            LogicComplaint.Submit = function(...) return end
+        end
+    end)
+
+    -- EXTRA SAFETY HOOKS (additional patches)
+    pcall(function()
+        if IngameTipsTools then
+            IngameTipsTools.BattleGeneralTipWithTranslation = nop
+            IngameTipsTools.BattleGeneralTip = nop
+            IngameTipsTools.BattleNormalTips = nop
+            IngameTipsTools.BattleNormalTipsByTextID = nop
+            IngameTipsTools.ShowMsgBox = nop
+        end
+    end)
+
+    pcall(function()
+        if CGameState and CGameState.BroadcastUICustomBehavior then
+            local orig = CGameState.BroadcastUICustomBehavior
+            CGameState.BroadcastUICustomBehavior = function(self, behavior, ...)
+                if behavior == "ShowRealTimeBlockingTips" then return end
+                return orig(self, behavior, ...)
+            end
+        end
+    end)
+
+    pcall(function()
+        local ReportPlayerUtils = require("GameLua.Mod.BaseMod.Common.Security.ReportPlayerUtils")
+        if ReportPlayerUtils then
+            ReportPlayerUtils.RecordFatalDamager = nop
+            ReportPlayerUtils.RecordFatalDamagerReconnect = nop
+            ReportPlayerUtils.IsUsingHistoricalTeammateInfo = nopfalse
+            ReportPlayerUtils.IsCharacterDeliverAI = nopfalse
+            ReportPlayerUtils.tSkipAlertFatalDamageCharacterTypeMapInDev = {}
+        end
+    end)
+
+    pcall(function()
+        local GameReportUtils = require("GameLua.Mod.BaseMod.GamePlay.GameReport.GameReportUtils")
+        if GameReportUtils then
+            GameReportUtils.ReportException = nop
+            GameReportUtils.ReplayReportData = nop
+            GameReportUtils.ReportGameException = nop
+            GameReportUtils.BugglyPostExceptionFull = nopfalse
+            GameReportUtils.CheckCanBugglyPostException = nopfalse
+        end
+    end)
+
+    pcall(function()
+        local ClientToolsReport = require("client.slua.logic.report.ClientToolsReport")
+        if ClientToolsReport then
+            ClientToolsReport.SendReport = nop
+            ClientToolsReport.SendException = nop
+            ClientToolsReport.ReportCapability = nop
+        end
+    end)
+
+    pcall(function()
+        local MatchManager = require("GameLua.Mod.SocialIsland.DS.Battle.MatchManager")
+        if MatchManager then
+            MatchManager.GetVehicleByUid = function() return nil end
+        end
+    end)
+
+    pcall(function()
+        if HDmpveRemote and HDmpveRemote.HDmpveRemoteConfigGetBool then
+            local orig = HDmpveRemote.HDmpveRemoteConfigGetBool
+            HDmpveRemote.HDmpveRemoteConfigGetBool = function(key, default)
+                local blockedKeys = {"ClientReportServer", "ClientReportServerWhite", "Report", "TLog", "Telemetry", "Analytics"}
+                if key and type(key) == "string" then
+                    for _, bk in ipairs(blockedKeys) do
+                        if key:find(bk) then return false end
+                    end
+                end
+                return orig(key, default)
+            end
+        end
+    end)
+
+    pcall(function()
+        local BasicDataTLogReport = ModuleManager and ModuleManager.GetModule and 
+            ModuleManager.GetModule(ModuleManager.DataModuleConfig.BasicDataTLogReport)
+        if BasicDataTLogReport then
+            BasicDataTLogReport.ReportImmediate = nop
+            BasicDataTLogReport.ReportDelay = nop
+            BasicDataTLogReport.send_report_event_duration_log = nop
+        end
+    end)
+
+    pcall(function()
+        if USTExtraBlueprintFunctionLibrary and USTExtraBlueprintFunctionLibrary.GetConsoleVariableIntValue then
+            local orig = USTExtraBlueprintFunctionLibrary.GetConsoleVariableIntValue
+            USTExtraBlueprintFunctionLibrary.GetConsoleVariableIntValue = function(name)
+                if name == "higgs.EnableClientShowSecurityAlert" then return 0 end
+                return orig(name)
+            end
+        end
+    end)
+
+    pcall(function()
+        if EventSystem then
+            local oldPost = EventSystem.postEvent
+            EventSystem.postEvent = function(eventType, eventID, ...)
+                local blockedEvents = {"EVENTID_ISLAND_RACING_FLOATING_CHEAT", "EVENTID_ISLAND_RACING_SPPED_CHEAT"}
+                if eventID and type(eventID) == "string" then
+                    for _, be in ipairs(blockedEvents) do
+                        if eventID:find(be) then return end
+                    end
+                end
+                if oldPost then oldPost(eventType, eventID, ...) end
+            end
+        end
+    end)
+
+    -- Final call to the main bypass function
+    pcall(ClientEntryBypass)
+    print("[BYPASS] ✅ All 16 bypass layers applied successfully!")
+end
+
+-- ============================================================
+-- RUN BYPASS IMMEDIATELY
+-- ============================================================
+ApplyAllBypasses()
 
 -- ============================================================
 -- WELCOME POP-UP
@@ -943,13 +757,14 @@ pcall(function()
         Msg.Show(4, "✦ ADITYA_ORG – ELITE ULTIMATE ✦",
         "\n★ Developer : @ADITYA_ORG\n" ..
         "★ Status    : UNDETECTED & OPTIMIZED\n" ..
-        "★ Bypass    : 27-Layer Deep Shield + All Visuals\n\n" ..
+        "★ Bypass    : 16‑Layer Ultimate Shield\n" ..
+        "★ PBC WH    : Always On\n\n" ..
         "✓ Premium Build Loaded Successfully!", onClick)
     end
 end)
 
 -- ============================================================
--- ESP (unchanged, uses functions from above)
+-- ESP (AddDebugText) – unchanged
 -- ============================================================
 local SecurityCommonUtils = require("GameLua.Mod.BaseMod.Common.Security.SecurityCommonUtils")
 local ASTExtraPlayerController = import("/Script/ShadowTrackerExtra.STExtraPlayerController")
@@ -1094,9 +909,17 @@ local function ESPTick()
                         local targetPos = headPos or tPawn:K2_GetActorLocation()
                         pcall(function()
                             if Game:IsTargetPosVisible(myEyePos, targetPos, {currentPawn}) then
-                                nameColor = {R=0,G=255,B=0,A=255}
+                                if _G.Mod_Chams_GreenEnabled then
+                                    nameColor = _G.Mod_Chams_GreenRGB or {R=0,G=255,B=0,A=255}
+                                else
+                                    nameColor = {R=0,G=255,B=0,A=255}
+                                end
                             else
-                                nameColor = {R=255,G=255,B=0,A=255}
+                                if _G.Mod_Chams_YellowEnabled then
+                                    nameColor = _G.Mod_Chams_YellowRGB or {R=255,G=255,B=0,A=255}
+                                else
+                                    nameColor = {R=255,G=255,B=0,A=255}
+                                end
                             end
                         end)
 
@@ -1146,7 +969,7 @@ pcall(function()
 end)
 
 -- ============================================================
--- AIMBOT + FEATURES (unchanged)
+-- AIMBOT + FEATURES
 -- ============================================================
 _G.Enable165FPSLogic = function()
   pcall(function()
@@ -1320,21 +1143,36 @@ local function ApplyHardAimbot()
         local entity = weapon.ShootWeaponEntityComp
         if not slua.isValid(entity) then return end
         entity.GameDeviationFactor = 0.2
+        entity.WeaponAimInTime = 20
+        entity.SwitchFromIdleToBackpackTime = 0.15
+        entity.SwitchFromBackpackToIdleTime = 0.15
+        entity.ShotGunHorizontalSpread = 0.0
+        entity.ShotGunVerticalSpread = 0.0
         entity.RecoilKickADS = 0.020
         entity.AccessoriesVRecoilFactor = 0.30
         entity.AccessoriesHRecoilFactor = 0.35
         entity.ExtraHitPerformScale = 10
+        if entity.RecoilInfo then
+            entity.RecoilInfo.VerticalRecoilMin = 0.2
+            entity.RecoilInfo.VerticalRecoilMax = 0.5
+            entity.RecoilInfo.RecoilSpeedVertical = 0.2
+            entity.RecoilInfo.RecoilSpeedHorizontal = 0.15
+            entity.RecoilInfo.VerticalRecoveryMax = 0.2
+        end
+        entity.RecoilModifierStand = 0.1
+        entity.RecoilModifierCrouch = 0.1
+        entity.RecoilModifierProne = 0.1
         if entity.AutoAimingConfig then
             for _, range in ipairs({"OuterRange", "InnerRange"}) do
                 local cfg = entity.AutoAimingConfig[range]
                 if cfg then
-                    cfg.Speed = 4
-                    cfg.RangeRate = 2
-                    cfg.SpeedRate = 3
-                    cfg.RangeRateSight = 2
-                    cfg.SpeedRateSight = 2
-                    cfg.CrouchRate = 3
-                    cfg.ProneRate = 2
+                    cfg.Speed = 8
+                    cfg.RangeRate = 5
+                    cfg.SpeedRate = 5
+                    cfg.RangeRateSight = 4
+                    cfg.SpeedRateSight = 4
+                    cfg.CrouchRate = 4
+                    cfg.ProneRate = 4
                     cfg.DyingRate = 0
                     cfg.adsorbMaxRange = 200
                     cfg.adsorbMinRange = 20
@@ -1345,6 +1183,19 @@ local function ApplyHardAimbot()
             end
             entity.AutoAimingConfig = entity.AutoAimingConfig
         end
+        pcall(function()
+            local aimComp = char.BP_AutoAimingComponent_C
+                         or char.BP_AutoAimingComponent
+                         or char.AutoAimingComponent
+            if slua.isValid(aimComp) and aimComp.Bones then
+                pcall(function() aimComp.Bones[0] = "neck_01" end)
+                pcall(function() aimComp.Bones[1] = "neck_01" end)
+                pcall(function() aimComp.Bones[2] = "neck_01" end)
+                pcall(function() aimComp.Bones:Set(0, "neck_01") end)
+                pcall(function() aimComp.Bones:Set(1, "neck_01") end)
+                pcall(function() aimComp.Bones:Set(2, "neck_01") end)
+            end
+        end)
     end)
 end
 
@@ -1384,13 +1235,1145 @@ end)
 -- ==================== SKINS MODULE ===========================
 -- ============================================================
 
--- (Full skin code from the original script – includes WeaponSkinMap,
---  VehicleSkinMap, OutfitMap, attachment handling, kill counter,
---  dead box skins, etc. – all kept as is.)
--- [For brevity, the full skin module is omitted here; paste your original skin code here.]
+local function sk_safe_require(path)
+    local ok, mod = pcall(require, path)
+    return ok and mod or nil
+end
+
+local BASE_PATH       = "/storage/emulated/0/Android/data/com.pubg.imobile/files/"
+local CONFIG_PATH     = BASE_PATH .. "config.ini"
+local SAVE_KILL_PATH  = BASE_PATH .. "kill_counts.txt"
+local ATTACH_PATH     = BASE_PATH .. "attachments.txt"
+
+_G.WeaponSkinMap        = _G.WeaponSkinMap        or {}
+_G.VehicleSkinMap       = _G.VehicleSkinMap        or {}
+_G.OutfitMap            = _G.OutfitMap             or {}
+_G.AttachmentOverrideMap= _G.AttachmentOverrideMap  or {}
+_G.SkinAttachments      = _G.SkinAttachments        or {}
+_G.SkinLoadedCache      = _G.SkinLoadedCache        or {}
+_G.FakeKillCounts       = _G.FakeKillCounts         or {}
+_G.LastEquippedOutfits  = _G.LastEquippedOutfits    or {}
+_G.g_parts              = _G.g_parts               or {}
+_G.skinAttachCache      = _G.skinAttachCache        or {}
+_G.KillData             = _G.KillData              or { kills = {} }
+_G.DeadBoxSkins         = _G.DeadBoxSkins          or {}
+_G.AlreadyChangedSet    = _G.AlreadyChangedSet      or {}
+_G.CurrentEquipVehicleID= _G.CurrentEquipVehicleID  or 0
+
+local function SaveKillsToFile()
+    pcall(function()
+        local file = io.open(SAVE_KILL_PATH, "w")
+        if file then
+            for id, count in pairs(_G.KillData.kills) do
+                file:write(string.format("%d:%d\n", id, count))
+            end
+            file:close()
+        end
+    end)
+end
+
+local function LoadKillsFromFile()
+    pcall(function()
+        local file = io.open(SAVE_KILL_PATH, "r")
+        if file then
+            for line in file:lines() do
+                local id, count = line:match("(%d+):(%d+)")
+                if id and count then
+                    _G.KillData.kills[tonumber(id)] = tonumber(count)
+                end
+            end
+            file:close()
+        end
+    end)
+end
+
+_G.getKills = function(weaponID) return _G.KillData.kills[weaponID] or 0 end
+
+_G.AddKill = function(weaponID)
+    if not weaponID then return end
+    _G.KillData.kills[weaponID] = (_G.KillData.kills[weaponID] or 0) + 1
+    _G._KillSaveDirty = (_G._KillSaveDirty or 0) + 1
+    if _G._KillSaveDirty >= 3 then
+        SaveKillsToFile()
+        _G._KillSaveDirty = 0
+    end
+    pcall(function()
+        local UIM = require("client.slua_ui_framework.manager")
+        local MKC = UIM.GetUI(UIM.UI_Config_InGame.MainKillCounter)
+        if MKC then
+            if MKC.OnRefreshData then
+                MKC:OnRefreshData()
+            end
+            if MKC.KillCounterItem and MKC.KillCounterItem.SetKillCounterItemShowWithNum then
+                local sid = _G.get_skin_id(weaponID) or weaponID
+                MKC.KillCounterItem:SetKillCounterItemShowWithNum(sid, _G.KillData.kills[weaponID], sid)
+            end
+        end
+    end)
+end
+
+LoadKillsFromFile()
+
+_G.get_skin_id = function(weaponID)
+    if not weaponID or weaponID == 0 then return nil end
+    local mapped = _G.WeaponSkinMap[weaponID]
+    if mapped and mapped > 0 then return mapped end
+    return nil
+end
+
+_G.download_item = function(i)
+    if not i then return end
+    pcall(function()
+        local PM = require("client.slua.logic.download.puffer.puffer_manager")
+        local PC = require("client.slua.logic.download.puffer_const")
+        if PM.GetState(PC.ENUM_DownloadType.ODPAK, {i}) ~= PC.ENUM_DownloadState.Done then
+            PM.Download(PC.ENUM_DownloadType.ODPAK, {i})
+        end
+    end)
+end
+
+local ATTACH_NAME_MAP = {
+    ["Red Dot Sight"]          = "RedDot",
+    ["Holographic Sight"]      = "Holo",
+    ["2x Scope"]               = "Scope2x",
+    ["3x Scope"]               = "Scope3x",
+    ["4x Scope"]               = "Scope4x",
+    ["6x Scope"]               = "Scope6x",
+    ["8x Scope"]               = "Scope8x",
+    ["Canted Sight"]           = "CantedSight",
+    ["Flash Hider"]            = "FlashHider",
+    ["Compensator"]            = "Compensator",
+    ["Suppressor"]             = "Suppressor",
+    ["Extended Mag"]           = "ExtMag",
+    ["Quickdraw Mag"]          = "QuickMag",
+    ["Extended Quickdraw Mag"] = "ExtQuickMag",
+    ["Angled Foregrip"]        = "AngledGrip",
+    ["Vertical Foregrip"]      = "VerticalGrip",
+    ["Thumb Grip"]             = "ThumbGrip",
+    ["Half Grip"]              = "HalfGrip",
+    ["Light Grip"]             = "LightGrip",
+    ["Laser Sight"]            = "LaserSight",
+    ["Tactical Stock"]         = "TactStock",
+    ["Stock"]                  = "MicroStock",
+    ["Cheek Pad"]              = "CheekPad",
+}
+
+local _attachFileCache = nil
+
+local function _parseAttachmentsFile()
+    local result = {}
+    pcall(function()
+        local f = io.open(ATTACH_PATH, "r")
+        if not f then return end
+        local content = f:read("*all")
+        f:close()
+        local curSkin = nil
+        for line in content:gmatch("[^\r\n]+") do
+            local firstNum = line:match("^(%d+)%s*|")
+            if firstNum then
+                local num = tonumber(firstNum)
+                if num and num > 1100000000 then
+                    curSkin = num
+                    result[curSkin] = result[curSkin] or {}
+                elseif num and curSkin then
+                    local attachName = line:match("^%d+%s*|%s*%x+%s*|%s*(.-)%s*$")
+                    if not attachName then attachName = line:match("^%d+%s*|%s*(.-)%s*$") end
+                    if attachName and attachName ~= "" then
+                        local key = ATTACH_NAME_MAP[attachName]
+                        if key then result[curSkin][key] = num end
+                    end
+                end
+            elseif line:find("^#%-%-%-%-") and line:find("skin") then
+                curSkin = nil
+            end
+        end
+    end)
+    return result
+end
+
+_G.GetAttachForSkin = function(skinId, key)
+    if not skinId or skinId == 0 or not key then return nil end
+    if not _attachFileCache then _attachFileCache = _parseAttachmentsFile() end
+    local t = _attachFileCache[skinId]
+    if not t then return nil end
+    local v = t[key]
+    return (v and v > 0) and v or nil
+end
+
+_G.GetAttachFileCache = function()
+    if not _attachFileCache then _attachFileCache = _parseAttachmentsFile() end
+    return _attachFileCache
+end
+
+local function ReadLiveConfig()
+    pcall(function()
+        local f = io.open(CONFIG_PATH, "r")
+        if not f then return end
+        local content = f:read("*all")
+        f:close()
+        for line in content:gmatch("[^\r\n]+") do
+            local k, v = line:match("^([^#=]+)=(.+)$")
+            if k and v then
+                k = k:gsub("^%s+", ""):gsub("%s+$", "")
+                if k == "cheats" then
+                    _G.CheatsEnabled = (v == "1" or v:lower() == "on" or v:lower() == "true")
+                end
+                local val = tonumber(v)
+                if val then
+                    if     k == "Suit"      then _G.OutfitMap.Suit      = val
+                    elseif k == "Hat"       then _G.OutfitMap.Hat       = val
+                    elseif k == "Mask"      then _G.OutfitMap.Mask      = val
+                    elseif k == "Glasses"   then _G.OutfitMap.Glasses   = val
+                    elseif k == "Pants"     then _G.OutfitMap.Pants     = val
+                    elseif k == "Shoes"     then _G.OutfitMap.Shoes     = val
+                    elseif k == "Bag"       then _G.OutfitMap.Bag       = val
+                    elseif k == "Helmet"    then _G.OutfitMap.Helmet    = val
+                    elseif k == "Armor"     then _G.OutfitMap.Armor     = val
+                    elseif k == "Parachute" then _G.OutfitMap.Parachute = val
+                    elseif k == "Pet"       then _G.OutfitMap.Pet       = val
+                    elseif k == "M416"    then _G.WeaponSkinMap[101004] = val
+                    elseif k == "AKM"     then _G.WeaponSkinMap[101001] = val
+                    elseif k == "SCAR"    then _G.WeaponSkinMap[101003] = val
+                    elseif k == "UMP"     then _G.WeaponSkinMap[102002] = val
+                    elseif k == "M762"    then _G.WeaponSkinMap[101008] = val
+                    elseif k == "AUG"     then _G.WeaponSkinMap[101006] = val
+                    elseif k == "ASM"     then _G.WeaponSkinMap[101101] = val
+                    elseif k == "ACE32"   then _G.WeaponSkinMap[101102] = val
+                    elseif k == "HoneyBadger" then _G.WeaponSkinMap[101012] = val
+                    elseif k == "M24"     then _G.WeaponSkinMap[103002] = val
+                    elseif k == "AWM"     then _G.WeaponSkinMap[103003] = val
+                    elseif k == "Kar98"   then _G.WeaponSkinMap[103001] = val
+                    elseif k == "M16A4"   then _G.WeaponSkinMap[101002] = val
+                    elseif k == "GROZA"   then _G.WeaponSkinMap[101005] = val
+                    elseif k == "QBZ"     then _G.WeaponSkinMap[101007] = val
+                    elseif k == "MK47"    then _G.WeaponSkinMap[101009] = val
+                    elseif k == "G36C"    then _G.WeaponSkinMap[101010] = val
+                    elseif k == "FAMAS"   then _G.WeaponSkinMap[101100] = val
+                    elseif k == "VSS"     then _G.WeaponSkinMap[103005] = val
+                    elseif k == "Mini14"  then _G.WeaponSkinMap[103006] = val
+                    elseif k == "MK14"    then _G.WeaponSkinMap[103007] = val
+                    elseif k == "SLR"     then _G.WeaponSkinMap[103009] = val
+                    elseif k == "QBU"     then _G.WeaponSkinMap[103010] = val
+                    elseif k == "MK12"    then _G.WeaponSkinMap[103100] = val
+                    elseif k == "AMR"     then _G.WeaponSkinMap[103012] = val
+                    elseif k == "DSR"     then _G.WeaponSkinMap[103102] = val
+                    elseif k == "Mosin"   then _G.WeaponSkinMap[103013] = val
+                    elseif k == "SKS"     then _G.WeaponSkinMap[103004] = val
+                    elseif k == "UZI"     then _G.WeaponSkinMap[102001] = val
+                    elseif k == "Vector"  then _G.WeaponSkinMap[102003] = val
+                    elseif k == "Thompson"then _G.WeaponSkinMap[102004] = val
+                    elseif k == "Bizon"   then _G.WeaponSkinMap[102005] = val
+                    elseif k == "MP5K"    then _G.WeaponSkinMap[102007] = val
+                    elseif k == "P90"     then _G.WeaponSkinMap[102105] = val
+                    elseif k == "S12K"    then _G.WeaponSkinMap[104003] = val
+                    elseif k == "DBS"     then _G.WeaponSkinMap[104004] = val
+                    elseif k == "S1897"   then _G.WeaponSkinMap[104001] = val
+                    elseif k == "S686"    then _G.WeaponSkinMap[104002] = val
+                    elseif k == "M249"    then _G.WeaponSkinMap[105001] = val
+                    elseif k == "DP28"    then _G.WeaponSkinMap[105002] = val
+                    elseif k == "MG3"     then _G.WeaponSkinMap[105010] = val
+                    elseif k == "Pan"     then _G.WeaponSkinMap[108004] = val
+                    elseif k == "Machete" then _G.WeaponSkinMap[108001] = val
+                    elseif k == "Crowbar" then _G.WeaponSkinMap[108002] = val
+                    elseif k == "Sickle"  then _G.WeaponSkinMap[108003] = val
+                    elseif k == "Motorcycle_1901001"              then _G.VehicleSkinMap[1901001] = val
+                    elseif k == "Vehicle_1901002"                 then _G.VehicleSkinMap[1901002] = val
+                    elseif k == "Sidecar_Motorcycle_1902001"      then _G.VehicleSkinMap[1902001] = val
+                    elseif k == "Dacia_1903001"                   then _G.VehicleSkinMap[1903001] = val
+                    elseif k == "Dacia_1903002"                   then _G.VehicleSkinMap[1903002] = val
+                    elseif k == "Dacia_1903003"                   then _G.VehicleSkinMap[1903003] = val
+                    elseif k == "dacia_1903004"                   then _G.VehicleSkinMap[1903004] = val
+                    elseif k == "Mini_Bus_1904001"                then _G.VehicleSkinMap[1904001] = val
+                    elseif k == "MiniBus_1904002"                 then _G.VehicleSkinMap[1904002] = val
+                    elseif k == "MiniBus_1904003"                 then _G.VehicleSkinMap[1904003] = val
+                    elseif k == "Pickup_(Open_Top)_1905001"       then _G.VehicleSkinMap[1905001] = val
+                    elseif k == "Pickup_(Closed_Top)_1906001"     then _G.VehicleSkinMap[1906001] = val
+                    elseif k == "PickUp_1906005"                  then _G.VehicleSkinMap[1906005] = val
+                    elseif k == "Buggy_1907001"                   then _G.VehicleSkinMap[1907001] = val
+                    elseif k == "buggy_1907002"                   then _G.VehicleSkinMap[1907002] = val
+                    elseif k == "buggy_1907003"                   then _G.VehicleSkinMap[1907003] = val
+                    elseif k == "UAZ_1908001"                     then _G.VehicleSkinMap[1908001] = val
+                    elseif k == "UAZ_(Closed_Top)_1909001"        then _G.VehicleSkinMap[1909001] = val
+                    elseif k == "UAZ_(Open_Top)_1910001"          then _G.VehicleSkinMap[1910001] = val
+                    elseif k == "PG-117_1911001"                  then _G.VehicleSkinMap[1911001] = val
+                    elseif k == "Jet_Ski_1912001"                 then _G.VehicleSkinMap[1912001] = val
+                    elseif k == "Mirado_(Closed_Top)_1914001"     then _G.VehicleSkinMap[1914001] = val
+                    elseif k == "Mirado_(Open_Top)_1915001"       then _G.VehicleSkinMap[1915001] = val
+                    elseif k == "Mirado_(Open_Top)_1915004"       then _G.VehicleSkinMap[1915004] = val
+                    elseif k == "Rony_1916001"                    then _G.VehicleSkinMap[1916001] = val
+                    elseif k == "Rony_1916002"                    then _G.VehicleSkinMap[1916002] = val
+                    elseif k == "Rony_1916003"                    then _G.VehicleSkinMap[1916003] = val
+                    elseif k == "Scooter_1917001"                 then _G.VehicleSkinMap[1917001] = val
+                    elseif k == "Scooter_1917002"                 then _G.VehicleSkinMap[1917002] = val
+                    elseif k == "Snowmobile_1918001"              then _G.VehicleSkinMap[1918001] = val
+                    elseif k == "Tukshai_1919001"                 then _G.VehicleSkinMap[1919001] = val
+                    elseif k == "Monster_Truck_1953001"           then _G.VehicleSkinMap[1953001] = val
+                    elseif k == "Monster_Truck_1953002"           then _G.VehicleSkinMap[1953002] = val
+                    elseif k == "Motor_Glider_1960001"            then _G.VehicleSkinMap[1960001] = val
+                    elseif k == "Coupe_RB_1961001"                then _G.VehicleSkinMap[1961001] = val
+                    elseif k == "Tank_1963001"                    then _G.VehicleSkinMap[1963001] = val
+                    elseif k == "Mountain_Bike_1965001"           then _G.VehicleSkinMap[1965001] = val
+                    elseif k == "UTV_(Utility_Task_Vehicle)_1966001" then _G.VehicleSkinMap[1966001] = val
+                    elseif k == "2-Seat_Bike_1967001"             then _G.VehicleSkinMap[1967001] = val
+                    elseif k == "Horse_1987001"                   then _G.VehicleSkinMap[1987001] = val
+                    elseif k == "Hovercraft_1988001"              then _G.VehicleSkinMap[1988001] = val
+                    elseif k == "Infected_Grizzly_Dacia_1903024"  then _G.VehicleSkinMap[1903024] = val
+                    elseif k == "Anniversary_Celebration_Dacia_1903040" then _G.VehicleSkinMap[1903040] = val
+                    end
+                end
+            end
+        end
+    end)
+end
+_G.ReadLiveConfig = ReadLiveConfig
+
+local rawGetTableData     = CDataTable and CDataTable.GetTableData     or function() return nil end
+local rawGetTableByFilter = CDataTable and CDataTable.GetTableByFilter or function() return nil end
+
+_G.InjectWeaponLogicHooks = function(pawn)
+    if not isValid(pawn) then return end
+    if _G.__WeaponLogicHookInjected then return end
+    _G.__WeaponLogicHookInjected = true
+    pcall(function()
+        local wm = pawn:GetWeaponManager()
+        if not isValid(wm) then return end
+        local old_GetEquipID = wm.GetEquipWeaponAvatarID
+        if old_GetEquipID then
+            wm.GetEquipWeaponAvatarID = function(self, weaponID)
+                local forced = _G.get_skin_id(weaponID)
+                if forced then return forced end
+                return old_GetEquipID(self, weaponID)
+            end
+        end
+        local old_GetWeaponAvatarID = wm.GetWeaponAvatarID
+        if old_GetWeaponAvatarID then
+            wm.GetWeaponAvatarID = function(self, weapon)
+                if isValid(weapon) then
+                    local forced = _G.get_skin_id(weapon:GetWeaponID())
+                    if forced then return forced end
+                end
+                return old_GetWeaponAvatarID(self, weapon)
+            end
+        end
+    end)
+end
+
+_G.ForceSyncWeaponSkins = function(pawn)
+    local wm = pawn:GetWeaponManager()
+    if not isValid(wm) then return end
+    for i = 1, 3 do
+        local wpn = wm:GetInventoryWeaponByPropSlot(i)
+        if isValid(wpn) then
+            local targetID = _G.get_skin_id(wpn:GetWeaponID())
+            if targetID and targetID > 0 then
+                pcall(function()
+                    if wpn.synData then
+                        local data = wpn.synData:Get(7)
+                        if data and data.defineID and data.defineID.TypeSpecificID ~= targetID then
+                            data.defineID.TypeSpecificID = targetID
+                            wpn.synData:Set(7, data)
+                            if wpn.OnWeaponSkinUpdate then wpn:OnWeaponSkinUpdate() end
+                        end
+                    end
+                    if wpn.SetWeaponAvatarID then wpn:SetWeaponAvatarID(targetID) end
+                end)
+            end
+        end
+    end
+end
+
+_G.ApplyWeaponSkins = function(pawn)
+    if not isValid(pawn) then return end
+    _G.InjectWeaponLogicHooks(pawn)
+    _G.ForceSyncWeaponSkins(pawn)
+end
+
+if not _G.AKTableHacked and CDataTable then
+    local _old = CDataTable.GetTableData
+    CDataTable.GetTableData = function(tableName, id)
+        local numId = tonumber(id)
+        if numId then
+            local upgradeID = _G.get_skin_id(numId)
+            if upgradeID and upgradeID ~= numId then
+                if tableName == "WeaponAvatarBattleEffect"
+                or tableName == "GoldClothBattleEffect"
+                or tableName == "WeaponSkinVoiceCfg"
+                or tableName == "AvatarWeaponHitFXData" then
+                    return _old(tableName, upgradeID)
+                end
+            end
+        end
+        return _old(tableName, id)
+    end
+    _G.AKTableHacked = true
+end
+
+_G.muzzles = {
+    id_flash_hider = { 201010, 201005, 201004 },
+    id_compensator = { 201009, 201003, 201002 },
+    id_suppressor  = { 201011, 201006, 201007 }
+}
+_G.foregrips = {
+    id_Angledforegrip = 202001,
+    id_thumb_grip     = 202006,
+    id_vertical_grip  = 202002,
+    id_light_grip     = 202004,
+    id_half_grip      = 202005,
+    id_ergonomic_grip = 202051,
+    id_laser_sight    = 202007
+}
+_G.magazines = {
+    id_expanded_mag       = { 204011, 204007, 204004 },
+    id_quick_mag          = { 204012, 204008, 204005 },
+    id_expanded_quick_mag = { 204013, 204009, 204006 }
+}
+_G.scopes = {
+    id_reddot = 203001,
+    id_holo   = 203002,
+    id_2x     = 203003,
+    id_3x     = 203014,
+    id_4x     = 203004,
+    id_6x     = 203015,
+    id_8x     = 203005
+}
+_G.stock = {
+    id_microStock = 205001,
+    id_tactical   = 205002,
+    id_bulletloop = 204014,
+    id_CheekPad   = 205003
+}
+
+_G.ItemUpgradeSystem = nil
+pcall(function()
+    local MM  = require("client.module_framework.ModuleManager")
+    local IUS = MM.GetModule(MM.CommonModuleConfig.ItemUpgradeManager)
+    if IUS then
+        IUS:DefineAndResetData()
+        IUS:OnInitialize()
+        _G.ItemUpgradeSystem = IUS
+    end
+end)
+
+_G.get_group_id = function(itemId)
+    if not _G.ItemUpgradeSystem or not itemId then return nil end
+    local cfg = _G.ItemUpgradeSystem:GetUpgradeCfg(itemId)
+    return cfg and cfg.GroupID or nil
+end
+
+_G.InitParts = function(groupId, itemId)
+    if not itemId then return _G.g_parts end
+    if _G.g_parts[itemId] and next(_G.g_parts[itemId]) then return _G.g_parts end
+    _G.g_parts[itemId] = {}
+    if not _G.ItemUpgradeSystem then return _G.g_parts end
+    if _G.ItemUpgradeSystem:IsWeaponIsRefit(itemId) then
+        groupId = _G.ItemUpgradeSystem:GetNormalGroupID(groupId or _G.get_group_id(itemId))
+    else
+        groupId = groupId or _G.get_group_id(itemId)
+    end
+    if not groupId then return _G.g_parts end
+    local cfg = rawGetTableByFilter("ItemUpgradeUnLockConfig", "GroupID", groupId)
+    if cfg then
+        for _, info in pairs(cfg) do
+            local partId = info.PartId
+            if _G.ItemUpgradeSystem:IsWeaponIsRefit(itemId) then
+                local switched = _G.ItemUpgradeSystem:PartIDSwitch(partId, true)
+                if switched and switched ~= partId then partId = switched end
+            end
+            local item = rawGetTableData("Item", partId)
+            if item and item.ItemName then
+                _G.g_parts[itemId][item.ItemName] = partId
+            end
+        end
+    end
+    return _G.g_parts
+end
+
+_G.GetRawAttachMap = function(skinid)
+    if not skinid or skinid <= 0 then return {} end
+    if _G.skinAttachCache[skinid] then return _G.skinAttachCache[skinid] end
+    local UAvatarUtils = import("AvatarUtils")
+    if not UAvatarUtils then return {} end
+    local list = UAvatarUtils.GetWeaponAvatarDefaultAttachmentSkin(skinid, {}, false) or {}
+    _G.skinAttachCache[skinid] = list
+    return list
+end
+
+_G.GetSlotFromSkinID = function(skinid, slot)
+    if not skinid or not slot then return 0 end
+    local list = _G.GetRawAttachMap(skinid)
+    local attachmentTypeMap = {
+        [1] = {291004,291102,291001,291006,291005,291002,293003,293004,293009,293007,293005,293006,295001,295002,291007,291003,292002,292003,291011,291008},
+        [2] = {205005,205102,205007,205009,205006},
+        [3] = {203008,203009,203006,203022,203010}
+    }
+    local targetIDs = attachmentTypeMap[slot]
+    if not targetIDs then return 0 end
+    for _, targetID in ipairs(targetIDs) do
+        for attachID, attachSkinID in pairs(list) do
+            if attachID == targetID then return attachSkinID end
+        end
+    end
+    return 0
+end
+
+_G.AutoDetectAttach = function(skinid, base_id)
+    if not skinid or not base_id then return 0 end
+    local list = _G.GetRawAttachMap(skinid)
+    local v = list[base_id]
+    return (v and v > 0) and v or 0
+end
+
+_G.get_muzzleid = function(current_id, avatarid)
+    local initial_id = current_id
+    _G.InitParts(_G.get_group_id(avatarid), avatarid)
+    local p = _G.g_parts[avatarid]
+    local function is_in(t)
+        for _, id in ipairs(_G.muzzles[t]) do if current_id == id then return true end end
+        return false
+    end
+    if is_in("id_flash_hider") then
+        local auto = _G.AutoDetectAttach(avatarid, current_id)
+        current_id = _G.GetAttachForSkin(avatarid, "FlashHider")
+                  or (p and p["Flash Hider"])
+                  or (auto > 0 and auto)
+                  or current_id
+    elseif is_in("id_compensator") then
+        local auto = _G.AutoDetectAttach(avatarid, current_id)
+        current_id = _G.GetAttachForSkin(avatarid, "Compensator")
+                  or (p and p["Compensator"])
+                  or (auto > 0 and auto)
+                  or current_id
+    elseif is_in("id_suppressor") then
+        local auto = _G.AutoDetectAttach(avatarid, current_id)
+        current_id = _G.GetAttachForSkin(avatarid, "Suppressor")
+                  or (p and p["Suppressor"])
+                  or (auto > 0 and auto)
+                  or current_id
+    end
+    return current_id, (initial_id ~= current_id)
+end
+
+_G.get_forgripid = function(current_id, avatarid)
+    local initial_id = current_id
+    _G.InitParts(_G.get_group_id(avatarid), avatarid)
+    local p = _G.g_parts[avatarid]
+    local auto = _G.AutoDetectAttach(avatarid, current_id)
+    if current_id == _G.foregrips.id_Angledforegrip then
+        current_id = _G.GetAttachForSkin(avatarid, "AngledGrip") or (p and p["Angled Foregrip"]) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.foregrips.id_thumb_grip then
+        current_id = _G.GetAttachForSkin(avatarid, "ThumbGrip") or (p and p["Thumb Grip"]) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.foregrips.id_vertical_grip then
+        current_id = _G.GetAttachForSkin(avatarid, "VerticalGrip") or (p and p["Vertical Foregrip"]) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.foregrips.id_light_grip then
+        current_id = _G.GetAttachForSkin(avatarid, "LightGrip") or (p and p["Light Grip"]) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.foregrips.id_half_grip then
+        current_id = _G.GetAttachForSkin(avatarid, "HalfGrip") or (p and p["Half Grip"]) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.foregrips.id_ergonomic_grip then
+        current_id = (p and p["Ergonomic Grip"]) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.foregrips.id_laser_sight then
+        current_id = _G.GetAttachForSkin(avatarid, "LaserSight") or (p and p["Laser Sight"]) or (auto > 0 and auto) or current_id
+    end
+    return current_id, (initial_id ~= current_id)
+end
+
+_G.get_magazinesid = function(current_id, avatarid)
+    local initial_id = current_id
+    _G.InitParts(_G.get_group_id(avatarid), avatarid)
+    local p = _G.g_parts[avatarid]
+    local function is_in(t)
+        for _, id in ipairs(_G.magazines[t]) do if current_id == id then return true end end
+        return false
+    end
+    if is_in("id_expanded_mag") then
+        local auto = _G.AutoDetectAttach(avatarid, current_id)
+        current_id = _G.GetAttachForSkin(avatarid, "ExtMag") or (p and p["Extended Mag"]) or _G.GetSlotFromSkinID(avatarid, 1) or (auto > 0 and auto) or current_id
+    elseif is_in("id_quick_mag") then
+        local auto = _G.AutoDetectAttach(avatarid, current_id)
+        current_id = _G.GetAttachForSkin(avatarid, "QuickMag") or (p and p["Quickdraw Mag"]) or _G.GetSlotFromSkinID(avatarid, 1) or (auto > 0 and auto) or current_id
+    elseif is_in("id_expanded_quick_mag") then
+        local auto = _G.AutoDetectAttach(avatarid, current_id)
+        current_id = _G.GetAttachForSkin(avatarid, "ExtQuickMag") or (p and p["Extended Quickdraw Mag"]) or _G.GetSlotFromSkinID(avatarid, 1) or (auto > 0 and auto) or current_id
+    else
+        local fb = _G.GetSlotFromSkinID(avatarid, 1)
+        if fb and fb > 0 then current_id = fb end
+    end
+    return current_id, (initial_id ~= current_id)
+end
+
+_G.get_scopeid = function(current_id, avatarid)
+    local initial_id = current_id
+    _G.InitParts(_G.get_group_id(avatarid), avatarid)
+    local p = _G.g_parts[avatarid]
+    local auto = _G.AutoDetectAttach(avatarid, current_id)
+    if current_id == _G.scopes.id_reddot then
+        current_id = _G.GetAttachForSkin(avatarid, "RedDot") or (p and p["Red Dot Sight"]) or _G.GetSlotFromSkinID(avatarid, 3) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.scopes.id_holo then
+        current_id = _G.GetAttachForSkin(avatarid, "Holo") or (p and p["Holographic Sight"]) or _G.GetSlotFromSkinID(avatarid, 3) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.scopes.id_2x then
+        current_id = _G.GetAttachForSkin(avatarid, "Scope2x") or (p and p["2x Scope"]) or _G.GetSlotFromSkinID(avatarid, 3) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.scopes.id_3x then
+        current_id = _G.GetAttachForSkin(avatarid, "Scope3x") or (p and p["3x Scope"]) or _G.GetSlotFromSkinID(avatarid, 3) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.scopes.id_4x then
+        current_id = _G.GetAttachForSkin(avatarid, "Scope4x") or (p and p["4x Scope"]) or _G.GetSlotFromSkinID(avatarid, 3) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.scopes.id_6x then
+        current_id = _G.GetAttachForSkin(avatarid, "Scope6x") or (p and p["6x Scope"]) or _G.GetSlotFromSkinID(avatarid, 3) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.scopes.id_8x then
+        current_id = _G.GetAttachForSkin(avatarid, "Scope8x") or (p and p["8x Scope"]) or _G.GetSlotFromSkinID(avatarid, 3) or (auto > 0 and auto) or current_id
+    else
+        local fb = _G.GetSlotFromSkinID(avatarid, 3)
+        if fb and fb > 0 then current_id = fb end
+    end
+    return current_id, (initial_id ~= current_id)
+end
+
+_G.get_stockid = function(current_id, avatarid)
+    local initial_id = current_id
+    _G.InitParts(_G.get_group_id(avatarid), avatarid)
+    local p = _G.g_parts[avatarid]
+    local auto = _G.AutoDetectAttach(avatarid, current_id)
+    if current_id == _G.stock.id_microStock then
+        current_id = _G.GetAttachForSkin(avatarid, "MicroStock") or (p and p["Stock"]) or _G.GetSlotFromSkinID(avatarid, 2) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.stock.id_tactical then
+        current_id = _G.GetAttachForSkin(avatarid, "TactStock") or (p and p["Tactical Stock"]) or _G.GetSlotFromSkinID(avatarid, 2) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.stock.id_bulletloop then
+        current_id = (p and p["Bullet Loop"]) or _G.GetSlotFromSkinID(avatarid, 2) or (auto > 0 and auto) or current_id
+    elseif current_id == _G.stock.id_CheekPad then
+        current_id = _G.GetAttachForSkin(avatarid, "CheekPad") or (p and p["Cheek Pad"]) or _G.GetSlotFromSkinID(avatarid, 2) or (auto > 0 and auto) or current_id
+    else
+        local fb = _G.GetSlotFromSkinID(avatarid, 2)
+        if fb and fb > 0 then current_id = fb end
+    end
+    return current_id, (initial_id ~= current_id)
+end
+
+_G.apply_attachment = function(CurWeapon, avatarid)
+    local array = CurWeapon.synData
+    for AttachIdx = 0, 4 do
+        local Data = array:Get(AttachIdx)
+        local itemid = slua.IndexReference(Data, "defineID").TypeSpecificID
+        if itemid and itemid > 0 and itemid < 10000000 then
+            local isrefresh = false
+            if AttachIdx == 0 then
+                Data.defineID.TypeSpecificID, isrefresh = _G.get_muzzleid(slua.IndexReference(Data, "defineID").TypeSpecificID, avatarid)
+                array:Set(AttachIdx, Data)
+            elseif AttachIdx == 1 then
+                Data.defineID.TypeSpecificID, isrefresh = _G.get_forgripid(slua.IndexReference(Data, "defineID").TypeSpecificID, avatarid)
+                array:Set(AttachIdx, Data)
+            elseif AttachIdx == 2 then
+                Data.defineID.TypeSpecificID, isrefresh = _G.get_magazinesid(slua.IndexReference(Data, "defineID").TypeSpecificID, avatarid)
+                array:Set(AttachIdx, Data)
+            elseif AttachIdx == 3 then
+                Data.defineID.TypeSpecificID, isrefresh = _G.get_stockid(slua.IndexReference(Data, "defineID").TypeSpecificID, avatarid)
+                array:Set(AttachIdx, Data)
+            elseif AttachIdx == 4 then
+                Data.defineID.TypeSpecificID, isrefresh = _G.get_scopeid(slua.IndexReference(Data, "defineID").TypeSpecificID, avatarid)
+                array:Set(AttachIdx, Data)
+            else
+                break
+            end
+            if isrefresh then
+                _G.download_item(slua.IndexReference(Data, "defineID").TypeSpecificID)
+                CurWeapon:DelayHandleAvatarMeshChanged()
+            end
+        end
+    end
+end
+
+local WEAPON_NAMES = {
+    "AKM","M16A4","SCAR","M416","GROZA","AUG","QBZ","M762",
+    "MK47","G36C","HoneyBadger","ASM","FAMAS","ACE32",
+    "UZI","UMP","Vector","Bizon","Thompson","MP5K","P90",
+    "Kar98","M24","AWM","SKS","Mini14","MK14","SLR","QBU","MK12","AMR","DSR","VSS","Mosin",
+    "S12K","DBS","S1897","S686",
+    "M249","DP28","MG3",
+    "Pan","Machete","Crowbar","Sickle",
+}
+local WEAPON_NAME_TO_ID = {
+    AKM=101001,M16A4=101002,SCAR=101003,M416=101004,
+    GROZA=101005,AUG=101006,QBZ=101007,M762=101008,
+    MK47=101009,G36C=101010,HoneyBadger=101012,ASM=101101,FAMAS=101100,ACE32=101102,
+    UZI=102001,UMP=102002,Vector=102003,Thompson=102004,Bizon=102005,MP5K=102007,P90=102105,
+    Kar98=103001,M24=103002,AWM=103003,SKS=103004,VSS=103005,
+    Mini14=103006,MK14=103007,SLR=103009,QBU=103010,MK12=103100,AMR=103012,DSR=103102,Mosin=103013,
+    S12K=104003,DBS=104004,S1897=104001,S686=104002,
+    M249=105001,DP28=105002,MG3=105010,
+    Pan=108004,Machete=108001,Crowbar=108002,Sickle=108003,
+}
+
+_G.SyncAttachmentsToConfig = function()
+    local cache = _G.GetAttachFileCache and _G.GetAttachFileCache()
+    if not cache or not next(cache) then return end
+    local hasSkin = false
+    for _, w in ipairs(WEAPON_NAMES) do
+        local baseId = WEAPON_NAME_TO_ID[w]
+        if baseId and (_G.WeaponSkinMap[baseId] or 0) > 0 then hasSkin = true; break end
+    end
+    if not hasSkin then return end
+    pcall(function()
+        local f = io.open(CONFIG_PATH, "r")
+        if not f then return end
+        local content = f:read("*all"); f:close()
+        local lines = {}
+        for line in content:gmatch("[^\r\n]+") do table.insert(lines, line) end
+        local filtered = {}
+        for _, line in ipairs(lines) do
+            local isAuto = false
+            for _, w in ipairs(WEAPON_NAMES) do
+                if line:find("^" .. w .. "_[%w%-]+=") then isAuto = true; break end
+            end
+            if not isAuto then table.insert(filtered, line) end
+        end
+        local ATTACH_TO_CONFIG_KEY = {
+            Scope2x = "2x", Scope3x = "3x", Scope4x = "4x", Scope6x = "6x", Scope8x = "8x",
+            RedDot = "RedDot", Holo = "Holo", CantedSight = "CantedSight",
+            FlashHider = "FlashHider", Compensator = "Compensator", Suppressor = "Suppressor",
+            ExtMag = "ExtMag", QuickMag = "QuickMag", ExtQuickMag = "ExtQuickMag",
+            AngledGrip = "AngledGrip", ThumbGrip = "ThumbGrip", VerticalGrip = "VerticalGrip",
+            LightGrip = "LightGrip", HalfGrip = "HalfGrip", LaserSight = "LaserSight",
+            TactStock = "TactStock", MicroStock = "MicroStock", CheekPad = "CheekPad",
+        }
+        local KEY_ORDER = {
+            "RedDot","Holo","CantedSight",
+            "Scope2x","Scope3x","Scope4x","Scope6x","Scope8x",
+            "FlashHider","Compensator","Suppressor",
+            "ExtMag","QuickMag","ExtQuickMag",
+            "AngledGrip","ThumbGrip","VerticalGrip","LightGrip","HalfGrip","LaserSight",
+            "TactStock","MicroStock","CheekPad",
+        }
+        local outLines = {}
+        table.insert(outLines, "; SyncAttachmentsToConfig ran")
+        local foundCount = 0
+        for _, line in ipairs(filtered) do
+            table.insert(outLines, line)
+            local wname, skinStr = line:match("^(%w+)=(%d+)$")
+            if wname then
+                local baseId = WEAPON_NAME_TO_ID[wname]
+                if baseId then
+                    local skinId = tonumber(skinStr)
+                    if skinId and skinId > 0 then
+                        local attaches = cache[skinId]
+                        if attaches then
+                            for _, key in ipairs(KEY_ORDER) do
+                                local id = attaches[key]
+                                local ck = ATTACH_TO_CONFIG_KEY[key]
+                                if id and ck then
+                                    table.insert(outLines, wname .. "_" .. ck .. "=" .. id)
+                                    foundCount = foundCount + 1
+                                end
+                            end
+                        else
+                            table.insert(outLines, "; No cache entry for skin " .. skinId)
+                        end
+                    end
+                    table.insert(outLines, "")
+                end
+            end
+        end
+        outLines[1] = "; SyncAttachmentsToConfig OK - matched " .. foundCount .. " attachments"
+        local out = io.open(CONFIG_PATH, "w")
+        if out then out:write(table.concat(outLines, "\n"), "\n"); out:close() end
+    end)
+end
+
+_G.ApplyLocalPlayerSkins = function(p)
+    if _G.Mod_Skin_Enabled == false then return end
+    if not isValid(p) then return end
+
+    pcall(function()
+        local BackpackUtils = import("BackpackUtils")
+        local ac = p:getAvatarComponent2()
+        if isValid(ac) and ac.NetAvatarData then
+            local applyData = ac.NetAvatarData.SlotSyncData
+            if isValid(applyData) then
+                local ref = false
+                for i = 0, applyData:Num() - 1 do
+                    local eq = applyData:Get(i)
+                    if eq and eq.ItemId ~= 0 then
+                        local target = 0
+                        if eq.SlotID == 5 and _G.OutfitMap.Suit then
+                            target = _G.OutfitMap.Suit
+                        elseif eq.SlotID == 8 and _G.OutfitMap.Bag and _G.OutfitMap.Bag ~= 501001 then
+                            local bagBase = _G.OutfitMap.Bag
+                            local level = 1
+                            if BackpackUtils then level = BackpackUtils.GetEquipmentBagLevel(eq.AdditionalItemID) or 1 end
+                            target = bagBase + (level - 1) * 1000
+                        elseif eq.SlotID == 9 and _G.OutfitMap.Helmet and _G.OutfitMap.Helmet ~= 502001 then
+                            local helBase = _G.OutfitMap.Helmet
+                            local level = 1
+                            if BackpackUtils then level = BackpackUtils.GetEquipmentHelmetLevel(eq.AdditionalItemID) or 1 end
+                            target = helBase + (level - 1) * 1000
+                        end
+                        if target and target ~= 0 and eq.ItemId ~= target then
+                            if _G.download_item and not _G.SkinLoadedCache[target] then
+                                pcall(_G.download_item, target)
+                                _G.SkinLoadedCache[target] = true
+                            end
+                            eq.ItemId = target
+                            applyData:Set(i, eq)
+                            ref = true
+                        end
+                    end
+                end
+                if ref and ac.OnRep_BodySlotStateChanged then ac:OnRep_BodySlotStateChanged() end
+            end
+            local extra_keys = {"Hat","Mask","Glasses","Pants","Shoes","Armor","Parachute"}
+            for _, key in ipairs(extra_keys) do
+                local id = _G.OutfitMap[key]
+                if id and id > 0 and _G.LastEquippedOutfits[key] ~= id then
+                    if _G.download_item and not _G.SkinLoadedCache[id] then
+                        pcall(_G.download_item, id)
+                        _G.SkinLoadedCache[id] = true
+                    end
+                    ac:PutOnCustomEquipmentByID(id, {})
+                    _G.LastEquippedOutfits[key] = id
+                end
+            end
+        end
+    end)
+
+    _G.ApplyWeaponSkins(p)
+    for i = 1, 3 do
+        local wpn = p:GetWeaponManager() and p:GetWeaponManager():GetInventoryWeaponByPropSlot(i)
+        if isValid(wpn) then
+            local target = _G.get_skin_id(wpn:GetWeaponID())
+            if target and target > 0 then
+                if not _G.SkinLoadedCache[target] then
+                    pcall(_G.download_item, target)
+                    _G.SkinLoadedCache[target] = true
+                end
+                if _G.apply_attachment then pcall(_G.apply_attachment, wpn, target) end
+            end
+        end
+    end
+
+    if _G.OutfitMap.Pet and _G.OutfitMap.Pet ~= 0 then
+        pcall(function()
+            local pc = slua_GameFrontendHUD:GetPlayerController()
+            if pc and pc.PetComponent and pc.PetComponent.PetId ~= _G.OutfitMap.Pet then
+                pc.PetComponent.PetId = _G.OutfitMap.Pet
+                pc.PetComponent:OnRep_PetId()
+            end
+        end)
+    end
+
+    pcall(function()
+        local CV = p.CurrentVehicle
+        if isValid(CV) then
+            local VA = CV.VehicleAvatar
+            if isValid(VA) then
+                local defId = tostring(VA:GetDefaultAvatarID() or "")
+                local currentId = tostring(CV:GetAvatarId() or "")
+                local vehTarget = 0
+                for baseId, targetSkin in pairs(_G.VehicleSkinMap) do
+                    if defId:find(tostring(baseId)) then vehTarget = targetSkin; break end
+                end
+                if vehTarget and vehTarget > 0 and currentId ~= tostring(vehTarget) then
+                    if _G.download_item and not _G.SkinLoadedCache[vehTarget] then
+                        pcall(_G.download_item, vehTarget)
+                        _G.SkinLoadedCache[vehTarget] = true
+                    end
+                    VA.curSwitchEffectId = 7303001
+                    VA:ChangeItemAvatar(vehTarget, true)
+                    _G.CurrentEquipVehicleID = vehTarget
+                end
+            end
+        end
+    end)
+end
+
+if not table.contains then
+    function table.contains(t, el)
+        for _, v in ipairs(t) do if v == el then return true end end
+        return false
+    end
+end
+
+local function locationsClose(loc1, loc2, tolerance)
+    local dx = loc1.X - loc2.X
+    local dy = loc1.Y - loc2.Y
+    local dz = loc1.Z - loc2.Z
+    return dx*dx + dy*dy + dz*dz < tolerance*tolerance
+end
+
+_G.ApplyDeadBoxSkin = function()
+    if _G.Mod_Skin_Enabled == false then return end
+    local pc = slua_GameFrontendHUD:GetPlayerController()
+    if not pc then return end
+    local uCharacter = pc:GetPlayerCharacterSafety()
+    if not isValid(uCharacter) then return end
+    local UGameplayStatics = import("GameplayStatics")
+    if not UGameplayStatics then return end
+    local uActor = import("Actor")
+    if not uActor then return end
+    local ok, UIUtil = pcall(require, "client.common.ui_util")
+    if not ok or not UIUtil then return end
+    local uGameInstance = UIUtil.GetGameInstance()
+    if not uGameInstance then return end
+    local APlayerTombBox = import("PlayerTombBox")
+    if not APlayerTombBox then return end
+    local uActorArray = UGameplayStatics.GetAllActorsOfClass(
+        uGameInstance, APlayerTombBox,
+        slua.Array(UEnums.EPropertyClass.Object, uActor))
+    if not uActorArray then return end
+    for _, actor in pairs(uActorArray) do
+        if isValid(actor) then
+            local DamageCauser = actor.DamageCauser
+            if DamageCauser and DamageCauser.PlayerKey == pc.PlayerKey then
+                local Deadboxavatar = actor.DeadBoxAvatarComponent_BP
+                if Deadboxavatar and not table.contains(_G.AlreadyChangedSet, actor) then
+                    local actorLocation = actor:K2_GetActorLocation()
+                    local found = false
+                    for _, entry in pairs(_G.DeadBoxSkins) do
+                        if locationsClose(entry.location, actorLocation, 1.0) then
+                            Deadboxavatar:ResetItemAvatar()
+                            Deadboxavatar:PreChangeItemAvatar(entry.SkinID)
+                            Deadboxavatar:SyncChangeItemAvatar(entry.SkinID)
+                            table.insert(_G.AlreadyChangedSet, actor)
+                            found = true
+                            break
+                        end
+                    end
+                    if not found then
+                        local ApplySkinID = 0
+                        local CV = uCharacter.CurrentVehicle
+                        if CV then
+                            local carSkinID = _G.CurrentEquipVehicleID
+                            if carSkinID ~= 0 then ApplySkinID = tostring(carSkinID) .. "1" end
+                        else
+                            local cw = uCharacter:GetCurrentWeapon()
+                            if cw and cw.synData then
+                                ApplySkinID = slua.IndexReference(cw.synData:Get(7), "defineID").TypeSpecificID
+                            end
+                        end
+                        Deadboxavatar:ResetItemAvatar()
+                        Deadboxavatar:PreChangeItemAvatar(ApplySkinID)
+                        Deadboxavatar:SyncChangeItemAvatar(ApplySkinID)
+                        table.insert(_G.DeadBoxSkins, { location = actorLocation, SkinID = ApplySkinID })
+                        table.insert(_G.AlreadyChangedSet, actor)
+                    end
+                end
+            end
+        end
+    end
+end
+
+_G.RefreshKillCounterUI = function()
+    pcall(function()
+        local pc = slua_GameFrontendHUD:GetPlayerController()
+        if not pc then return end
+        local lp = pc:GetPlayerCharacterSafety()
+        if not isValid(lp) then return end
+        local cw = lp:GetCurrentWeapon()
+        if not isValid(cw) then return end
+        local wID = cw:GetWeaponID()
+        if not wID or wID == 0 then return end
+        local sid = _G.get_skin_id(wID)
+        if not sid then return end
+        local KillCounterUI = package.loaded["GameLua.Mod.BaseMod.Client.KillCounter.KillCounterUISubsystem"]
+        if KillCounterUI and KillCounterUI.__inner_impl then
+            KillCounterUI.__inner_impl:CheckNeedMainKillCounterUI(cw, pc.PlayerKey)
+        end
+        local UIM = require("client.slua_ui_framework.manager")
+        local MKC = UIM.GetUI(UIM.UI_Config_InGame.MainKillCounter)
+        if MKC and MKC.KillCounterItem then
+            MKC:SetKillCounterItemShowWithNum(sid, _G.getKills(wID), sid)
+        end
+    end)
+end
+
+_G.ForceEnableKillCounterUI = function()
+    if _G.KCUISystemHacked2 then return end
+    pcall(function()
+        local KillCounterUI = package.loaded["GameLua.Mod.BaseMod.Client.KillCounter.KillCounterUISubsystem"]
+                           or require("GameLua.Mod.BaseMod.Client.KillCounter.KillCounterUISubsystem")
+        if KillCounterUI and KillCounterUI.__inner_impl then
+            local ui = KillCounterUI.__inner_impl
+            ui.CheckSupportKCUI = function() return true end
+            ui.CheckNeedMainKillCounterUI = function(self, Weapon, PlayerID)
+                local pc = slua_GameFrontendHUD:GetPlayerController()
+                local cw = isValid(Weapon) and Weapon
+                        or (pc and pc:GetPlayerCharacterSafety() and pc:GetPlayerCharacterSafety():GetCurrentWeapon())
+                if not isValid(cw) then self:UpdateMainKillCounterUI(false); return end
+                local wID = cw:GetWeaponID()
+                if not wID or wID == 0 then self:UpdateMainKillCounterUI(false); return end
+                self:UpdateMainKillCounterUI(true, wID, _G.get_skin_id(wID) or wID)
+            end
+            local old_Update = ui.UpdateMainKillCounterUI
+            ui.UpdateMainKillCounterUI = function(self, bShow, WeaponID, AvatarID)
+                if not bShow then return old_Update(self, bShow, WeaponID, AvatarID) end
+                return old_Update(self, bShow, WeaponID, AvatarID or _G.get_skin_id(WeaponID))
+            end
+            _G.KCUISystemHacked2 = true
+        end
+        local MM = require("client.module_framework.ModuleManager")
+        if MM then
+            local LogicKC = MM.GetModule(MM.CommonModuleConfig.LogicKillCounter)
+            if LogicKC and not _G.KCLogicHacked2 then
+                LogicKC.CheckSupportKC                = function() return true end
+                LogicKC.CheckSupportKillCounterAvatar = function() return true end
+                LogicKC.CheckHasWeaponKillCounter     = function() return true end
+                LogicKC.GetBaseKillCounterIdByWeaponId= function() return 2100004 end
+                LogicKC.GetEquipedKillCounterId        = function() return 2100004 end
+                LogicKC.GetMyEquipedKillCounterId      = function() return 2100004 end
+                LogicKC.GetOneWeaponKillCountInBattle  = function(_, _, wid) return _G.getKills(wid) end
+                LogicKC.GetWeaponKillCountByUid        = function(_, _, wid) return _G.getKills(wid) end
+                _G.KCLogicHacked2 = true
+            end
+        end
+        local KillInfoPath = "GameLua.Mod.BaseMod.Client.KillInfoTips.KillInfo"
+        local KillInfo = package.loaded[KillInfoPath] or require(KillInfoPath)
+        if KillInfo and KillInfo.__inner_impl and not _G.KillInfoCounterHacked then
+            local old_FileItem = KillInfo.__inner_impl.FileItem
+            KillInfo.__inner_impl.FileItem = function(self, DRD)
+                pcall(function()
+                    local GD = require("GameLua.GameCore.Data.GameplayData")
+                    local lp = GD.GetPlayerCharacter()
+                    if isValid(lp) and DRD.Causer == lp:GetPlayerNameSafety() then
+                        local cw = lp:GetCurrentWeapon()
+                        if isValid(cw) then
+                            local wid = cw:GetWeaponID()
+                            local sid = _G.get_skin_id(wid)
+                            if sid then DRD.CauserWeaponAvatarID = sid end
+                            if _G.OutfitMap.Suit then DRD.CauserClothAvatarID = _G.OutfitMap.Suit end
+                            DRD.IsUseColor = true
+                            DRD.UseColor = import("LinearColor")(1.0, 0.8, 0.0, 1.0)
+                            local expand_data = DRD.ExpandDataContent
+                            if expand_data then
+                                expand_data.KillCounterItemId = sid or wid
+                                expand_data.KillCounterNum = _G.getKills(wid)
+                            end
+                            if DRD.ResultHealthStatus == 2 then
+                                _G.AddKill(wid)
+                                local UIM = require("client.slua_ui_framework.manager")
+                                local MKC = UIM.GetUI(UIM.UI_Config_InGame.MainKillCounter)
+                                if MKC and MKC.KillCounterItem then
+                                    MKC:SetKillCounterItemShowWithNum(sid or wid, _G.getKills(wid), sid or wid)
+                                end
+                            end
+                        end
+                    end
+                end)
+                if old_FileItem then old_FileItem(self, DRD) end
+            end
+            _G.KillInfoCounterHacked = true
+        end
+        local ok2, WIIB = pcall(require, "GameLua.Mod.BaseMod.Client.Backpack.WeaponInfoItemBase")
+        if ok2 and WIIB and WIIB.__inner_impl and not _G.WeaponInfoBackpackHacked then
+            local o_UWA = WIIB.__inner_impl.UpdateWeaponAppearanceInfo
+            if o_UWA then
+                WIIB.__inner_impl.UpdateWeaponAppearanceInfo = function(self, TypeSpecificID, BattleData, DragOrigin)
+                    local ItemData = rawGetTableData("Item", TypeSpecificID)
+                    if not ItemData then return o_UWA(self, TypeSpecificID, BattleData, DragOrigin) end
+                    local skin_id = _G.get_skin_id(TypeSpecificID)
+                    if not skin_id or not _G.SkinLoadedCache[skin_id] then
+                        return o_UWA(self, TypeSpecificID, BattleData, DragOrigin)
+                    end
+                    o_UWA(self, skin_id, BattleData, DragOrigin)
+                    pcall(function()
+                        self.TypeSpecificIDTemp = TypeSpecificID
+                        self.ItemID             = TypeSpecificID
+                        if self.UIRoot then
+                            self.UIRoot.ItemID = TypeSpecificID
+                            if self.UIRoot.TextBlock_WeaponName and ItemData.ItemName then
+                                self.UIRoot.TextBlock_WeaponName:SetText(ItemData.ItemName)
+                            end
+                        end
+                        if self.BindWeaponChangeEvent  then self:BindWeaponChangeEvent()  end
+                        if self.UpdateBullet           then self:UpdateBullet()           end
+                        if self.UpdateWeaponDurability then self:UpdateWeaponDurability() end
+                        if self.UpdateWeaponAttachment then self:UpdateWeaponAttachment() end
+                    end)
+                end
+                _G.WeaponInfoBackpackHacked = true
+            end
+        end
+    end)
+end
+
+if not _G.BattleKillBroadcastSkinHacked then
+    pcall(function()
+        local BattleKillBroadcastSubSystem = require("GameLua.Mod.BaseMod.Client.BattleKillBroadcast.BattleKillBroadcastSubSystem")
+        if not (BattleKillBroadcastSubSystem and BattleKillBroadcastSubSystem.__inner_impl) then return end
+        local o_Copy = BattleKillBroadcastSubSystem.__inner_impl.CopyKillOrPutDownMessageDataUserDataToLuaTable
+        BattleKillBroadcastSubSystem.__inner_impl.CopyKillOrPutDownMessageDataUserDataToLuaTable = function(self, messageData)
+            local msgData = o_Copy(self, messageData)
+            pcall(function()
+                local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
+                local character = pc and pc:GetPlayerCharacterSafety()
+                if character and isValid(character) and msgData.bIamCauser and _G.LuaStateWrapper then
+                    msgData.bShowBottomBothSidesKillInfo = true
+                    local weapon = character:GetCurrentWeapon()
+                    if weapon and isValid(weapon) then
+                        local weapon_id = weapon:GetItemDefineID() and weapon:GetItemDefineID().TypeSpecificID or 0
+                        if weapon_id ~= 0 then
+                            local expand_data = slua.LuaArchiverDecode(_G.LuaStateWrapper, msgData.ExpandDataContent) or {}
+                            local isClassic = false
+                            local uGameState = slua_GameFrontendHUD:GetGameState()
+                            if uGameState and isValid(uGameState) then
+                                local EGameModeType = import("EGameModeType")
+                                if uGameState.GameModeType == EGameModeType.ETypicalGameMode then isClassic = true end
+                            end
+                            local syn_data = weapon.synData
+                            if syn_data and isValid(syn_data) then
+                                local define_id = slua.IndexReference(syn_data:Get(7), "defineID")
+                                if define_id and isValid(define_id) then
+                                    expand_data.CauserWeaponAvatarID = define_id.TypeSpecificID
+                                end
+                            end
+                            if isClassic then
+                                expand_data.KillCounterItemId = weapon_id
+                                expand_data.KillCounterNum = _G.getKills and _G.getKills(weapon_id) or 0
+                            end
+                            msgData.bShowKillNum = true
+                            msgData.ExpandDataContent = slua.LuaArchiverEncode(_G.LuaStateWrapper, expand_data)
+                        end
+                    end
+                end
+            end)
+            return msgData
+        end
+        _G.BattleKillBroadcastSkinHacked = true
+    end)
+end
+
+ReadLiveConfig()
+_G.ForceEnableKillCounterUI()
+
+_G._SetupSkinTimer = function()
+    pcall(function()
+        local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
+        if not (pc and slua.isValid(pc)) then return end
+        if _G.SkinTimerPC == pc then return end
+        _G.SkinTimerPC = pc
+        _G._SkinTimerInstalled = true
+        _G._SkinTickCount = 0
+        pc:AddGameTimer(0.5, true, function()
+            pcall(function()
+                local lpc = slua_GameFrontendHUD:GetPlayerController()
+                if not (lpc and slua.isValid(lpc)) then return end
+                local pawn = lpc:GetPlayerCharacterSafety()
+                if not (pawn and slua.isValid(pawn)) then return end
+                _G._SkinTickCount = (_G._SkinTickCount or 0) + 1
+                local tick = _G._SkinTickCount
+                if tick % 4 == 1 then
+                    _G.ReadLiveConfig()
+                    _G.SyncAttachmentsToConfig()
+                end
+                if tick % 10 == 1 then
+                    _G.ApplyLocalPlayerSkins(pawn)
+                    _G.ApplyDeadBoxSkin()
+                end
+                _G.RefreshKillCounterUI()
+            end)
+        end)
+    end)
+end
+
+_G._SetupSkinTimer()
 
 -- ============================================================
 -- ==================== PBC WALLHACK MODULE ====================
+-- (dyeing/outline chams, controlled by separate toggle)
 -- ============================================================
 
 _G._ChamsTimer = nil
@@ -1468,8 +2451,8 @@ local function ChamsTick()
         if not LinearColor then return end
 
         local colors = {
-            vis = LinearColor(50, 50, 5, 100),
-            occ = LinearColor(50, 0, 50, 100),
+            vis = LinearColor(50, 50, 5, 100),    -- cyan
+            occ = LinearColor(50, 0, 50, 100),    -- purple
             bVis = LinearColor(49, 48, 0, 100),
             bOcc = LinearColor(9, 1.5, 45, 100)
         }
@@ -1499,12 +2482,14 @@ local function ChamsTick()
             local visColor = isAI and colors.bVis or colors.vis
             local occColor = isAI and colors.bOcc or colors.occ
 
+            -- Main mesh
             pcall(function()
                 if slua.isValid(pawn.Mesh) then
                     ChamsApplyToMesh(pawn.Mesh, visColor, occColor)
                 end
             end)
 
+            -- Avatar components
             pcall(function()
                 local avatarComp = pawn.CharacterAvatarComp2_BP or pawn:getAvatarComponent2()
                 if avatarComp and slua.isValid(avatarComp) and avatarComp.GetMeshCompBySlot then
@@ -1517,6 +2502,7 @@ local function ChamsTick()
                 end
             end)
 
+            -- Weapon mesh
             pcall(function()
                 local weapon = pawn:GetCurrentWeapon()
                 if weapon and slua.isValid(weapon) then
@@ -1592,7 +2578,7 @@ _G.ChamsCleanup = function()
 end
 
 -- ============================================================
--- MENU (with PBC toggle only, no Wallhack settings)
+-- MENU (updated: only main features + PBC toggle; no standalone wallhack settings)
 -- ============================================================
 _G.InitModMenuTab = function()
     local LocUtil = _G.LocUtil
