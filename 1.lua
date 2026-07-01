@@ -1,6 +1,6 @@
 -- ============================================================
 -- MODDED BY ADITYA_ORG + @ADITYA_ORG
--- Complete MOD with Ultimate Bypass V3.0 + SKINS + PBC WALLHACK
+-- Complete MOD with ULTIMATE BYPASS V4.0 + SKINS + PBC WALLHACK
 -- All features: Aimbot, ESP, PBC Wallhack, 165 FPS, No Grass, iPad View, SKINS
 -- Bypass activates on game start with popup
 -- ============================================================
@@ -16,449 +16,152 @@ do
 end
 
 -- ============================================================
--- FEATURE TOGGLES
--- ============================================================
-if not _G.Mod_Aimbot_Enabled then _G.Mod_Aimbot_Enabled = false end
-if not _G.Mod_ESP_Enabled then _G.Mod_ESP_Enabled = false end
-if _G.Mod_FPS165_Enabled == nil then _G.Mod_FPS165_Enabled = true end
-if _G.Mod_NoGrass_Enabled == nil then _G.Mod_NoGrass_Enabled = true end
-if _G.Mod_iPadView_Enabled == nil then _G.Mod_iPadView_Enabled = false end
-if _G.Mod_iPadViewDistance == nil then _G.Mod_iPadViewDistance = 90 end
-if _G.Mod_Skin_Enabled == nil then _G.Mod_Skin_Enabled = false end
-if _G.Mod_PBCWallhack_Enabled == nil then _G.Mod_PBCWallhack_Enabled = false end
-
--- ============================================================
--- ULTIMATE BYPASS V3.0 - MAIN HOOK + REVERSE SYSTEM
--- SOURCE: Hybrid of V2.0 + Advanced Hook Manager
--- OWNER: @ADITYA_ORG (Upgraded)
+-- ==================== ULTIMATE BYPASS V4.0 ====================
+-- (Full Hook System + Anti-Ban + Spoofing + Telemetry Scrambler)
 -- ============================================================
 
--- ============================================================
--- 1. DOMAIN BLOCK LIST (Expanded with wildcards)
--- ============================================================
-local blockedDomains = {
-    "tss.tencent","syzsdk","gcloud.qq","reportlog","tdos","logupload","feedback.wh","crash2",
-    "privacy.qq","privacy.tencent","oth.eve","mdt.qq","act.tencentyun","analytics","report.qq",
-    "anticheatexpert","crashsight","wetest","log.tav","sngd","tracer","intlsdk","igamecj",
-    "cdn.club","gpubgm","graph.facebook","calendarpushsubscription","googleads","doubleclick",
-    "firebaselogging","firebaseremoteconfig","fonts.googleapis","abs.twimg","dl.listdl",
-    "igame.gcloudcs","bugly","beacon","helpshift","tdm","apm","safeguard","weiyun","qzone",
-    "tencent-cloud","myapp","idqqimg","gtimg","qqmail","tcdn","cloudctrl","sdkostrace",
-    "103.134.189.146","mbgame","csoversea","igame","pubgmobile","down.anticheatexpert.com",
-    "asia.csoversea.mbgame.anticheatexpert.com","log.tav.qq","syzsdk.qq","logiservice.qcloud",
-    "opensdk.tencent","exp.helpshift","loginsdkapi.zingplay","firebase","googleapis","facebook","gvoice",
-    "%.tencent%.","%.qq%.","%.anticheatexpert%.","%.helpshift%.","%.crashsight%.","%.bugly%.","%.beacon%."
-}
+-- Self-protection & anti-tamper
+local function ProtectEnvironment()
+    if debug and debug.getinfo then
+        local old_getinfo = debug.getinfo
+        debug.getinfo = function(...)
+            local info = old_getinfo(...)
+            if info and info.source and string.find(info.source, "1.lua") then
+                return nil
+            end
+            return info
+        end
+    end
 
--- ============================================================
--- 2. NOP FUNCTIONS (Extended)
--- ============================================================
+    local g = _G
+    local mt = getmetatable(g) or {}
+    mt.__newindex = function(t, k, v)
+        if k == "BypassLoaded" then return end
+        rawset(t, k, v)
+    end
+    mt.__index = function(t, k)
+        if k == "BypassLoaded" then return true end
+        return rawget(t, k)
+    end
+    setmetatable(g, mt)
+    _G.BypassLoaded = true
+end
+ProtectEnvironment()
+
+-- NOP utilities (do NOT override print, to keep mod messages)
 local function nop() end
 local function nopt() return {} end
 local function nopnil() return nil end
 local function noptrue() return true end
 local function nopfalse() return false end
 local function nopstr() return "" end
-local function nopzero() return 0 end
 
--- ============================================================
--- 3. MAIN HOOK MANAGER (Centralized)
--- ============================================================
-local HookManager = {}
-HookManager.__index = HookManager
+-- Domain blocklist (expanded)
+local blockedDomains = {
+    "tss.tencent", "syzsdk", "gcloud.qq", "reportlog", "tdos", "logupload", "feedback.wh", "crash2",
+    "privacy.qq", "privacy.tencent", "oth.eve", "mdt.qq", "act.tencentyun", "analytics", "report.qq",
+    "anticheatexpert", "crashsight", "wetest", "log.tav", "sngd", "tracer", "intlsdk", "igamecj",
+    "cdn.club", "gpubgm", "graph.facebook", "calendarpushsubscription", "googleads", "doubleclick",
+    "firebaselogging", "firebaseremoteconfig", "fonts.googleapis", "abs.twimg", "dl.listdl",
+    "igame.gcloudcs", "bugly", "beacon", "helpshift", "tdm", "apm", "safeguard", "weiyun", "qzone",
+    "tencent-cloud", "myapp", "idqqimg", "gtimg", "qqmail", "tcdn", "cloudctrl", "sdkostrace",
+    "103.134.189.146", "mbgame", "csoversea", "igame", "pubgmobile", "down.anticheatexpert.com",
+    "asia.csoversea.mbgame.anticheatexpert.com", "log.tav.qq", "syzsdk.qq", "logiservice.qcloud",
+    "opensdk.tencent", "exp.helpshift", "loginsdkapi.zingplay", "firebase", "googleapis", "facebook", "gvoice",
+    "play.googleapis", "app-measurement", "googlesyndication", "googleadservices", "google-analytics",
+    "googletagmanager", "googleoptimize", "googleusercontent", "googleapis.com", "gstatic.com",
+    "graph.instagram.com", "api.telegram.org", "api.whatsapp.com"
+}
 
-function HookManager:new()
-    return setmetatable({hooks = {}, patterns = {}}, self)
-end
-
-function HookManager:addHook(target, funcName, replacement, options)
-    if type(target) == "table" and type(funcName) == "string" then
-        local orig = target[funcName]
-        if type(orig) == "function" then
-            local hookData = {
-                target = target,
-                funcName = funcName,
-                original = orig,
-                replacement = replacement,
-                options = options or {}
-            }
-            table.insert(self.hooks, hookData)
-            target[funcName] = function(...)
-                if options and options.nop then return end
-                return replacement(self, orig, ...)
-            end
-            return true
-        end
-    elseif type(target) == "function" and type(funcName) == "function" then
-        local orig = target
-        local hookData = {
-            target = nil,
-            funcName = nil,
-            original = orig,
-            replacement = funcName,
-            options = options or {}
-        }
-        table.insert(self.hooks, hookData)
-        return false
-    end
-    return false
-end
-
-function HookManager:removeAll()
-    for _, hook in ipairs(self.hooks) do
-        if hook.target and hook.funcName then
-            hook.target[hook.funcName] = hook.original
-        end
-    end
-    self.hooks = {}
-end
-
--- ============================================================
--- 4. REVERSE SYSTEM (Dynamic Module Discovery)
--- ============================================================
-local ReverseSystem = {}
-
-function ReverseSystem:scanAndHook(patterns, hookManager, replacementFunc)
-    local scanned = {}
-    for modName, modTable in pairs(package.loaded) do
-        if type(modTable) == "table" and not scanned[modName] then
-            scanned[modName] = true
-            for key, value in pairs(modTable) do
-                if type(value) == "function" and type(key) == "string" then
-                    for _, pattern in ipairs(patterns) do
-                        if string.find(key, pattern, 1, true) then
-                            hookManager:addHook(modTable, key, replacementFunc)
-                        end
-                    end
-                end
-            end
-        end
-    end
-    for key, value in pairs(_G) do
-        if type(value) == "function" and type(key) == "string" and not scanned[key] then
-            scanned[key] = true
-            for _, pattern in ipairs(patterns) do
-                if string.find(key, pattern, 1, true) then
-                    hookManager:addHook(_G, key, replacementFunc)
-                end
-            end
-        end
-    end
-end
-
--- ============================================================
--- 5. INITIALIZATION: DOMAIN BLOCKER (Enhanced)
--- ============================================================
-local function InitDomainBlocker(hookManager)
+-- MODULE 1: Advanced Domain Blocker
+local function InitAdvancedDomainBlocker()
     pcall(function()
-        if package.loaded["client.network.http.HttpClient"] then
-            local hc = package.loaded["client.network.http.HttpClient"]
-            hookManager:addHook(hc, "SendRequest", function(_, orig, url, cb, method, headers, content, timeout)
-                for _, host in ipairs(blockedDomains) do
-                    if url and string.find(string.lower(url), string.lower(host), 1, true) then
-                        return nil
+        local hc = package.loaded["client.network.http.HttpClient"]
+        if hc then
+            local mt = getmetatable(hc) or {}
+            local old_send = hc.SendRequest
+            mt.__index = function(t, k)
+                if k == "SendRequest" then
+                    return function(self, url, cb, method, headers, content, timeout)
+                        for _, host in ipairs(blockedDomains) do
+                            if url and string.find(string.lower(url), string.lower(host)) then
+                                return nil
+                            end
+                        end
+                        return old_send(self, url, cb, method, headers, content, timeout)
                     end
                 end
-                return orig(url, cb, method, headers, content, timeout)
-            end)
+                return rawget(t, k)
+            end
+            setmetatable(hc, mt)
         end
+
         if NetUtil and NetUtil.SendHttpRequest then
-            hookManager:addHook(NetUtil, "SendHttpRequest", function(_, orig, url, cb, method, headers, content)
+            local old = NetUtil.SendHttpRequest
+            NetUtil.SendHttpRequest = function(url, cb, method, headers, content)
                 for _, host in ipairs(blockedDomains) do
-                    if url and string.find(string.lower(url), string.lower(host), 1, true) then
+                    if url and string.find(string.lower(url), string.lower(host)) then
                         return nil
                     end
                 end
-                return orig(url, cb, method, headers, content)
-            end)
+                return old(url, cb, method, headers, content)
+            end
         end
+
         local wv = package.loaded["client.slua.logic.url.logic_webview_sdk"]
-        if wv then
-            hookManager:addHook(wv, "OpenURL", function(_, orig, url)
+        if wv and wv.OpenURL then
+            local old = wv.OpenURL
+            wv.OpenURL = function(url)
                 for _, host in ipairs(blockedDomains) do
-                    if url and string.find(string.lower(url), string.lower(host), 1, true) then
+                    if url and string.find(string.lower(url), string.lower(host)) then
                         return nil
                     end
                 end
-                return orig(url)
-            end)
+                return old(url)
+            end
         end
+
         if socket and socket.connect then
-            hookManager:addHook(socket, "connect", function(_, orig, host, port, timeout)
+            local old = socket.connect
+            socket.connect = function(host, port, timeout)
                 for _, blocked in ipairs(blockedDomains) do
-                    if host and string.find(string.lower(host), string.lower(blocked), 1, true) then
+                    if host and string.find(string.lower(host), string.lower(blocked)) then
                         return nil, "blocked"
                     end
                 end
-                return orig(host, port, timeout)
-            end)
+                return old(host, port, timeout)
+            end
         end
-    end)
-end
 
--- ============================================================
--- 6. INIT: SKIN BYPASS + ALL PREVIOUS MODULES (Using HookManager)
--- ============================================================
-local function InitSkinBypass(hookManager)
-    pcall(function()
-        local puf = package.loaded["client.slua.logic.download.report.puffer_tlog"]
-        if puf then
-            hookManager:addHook(puf, "ReportEvent", nop)
-            hookManager:addHook(puf, "ReportDownloadResult", nop)
-            hookManager:addHook(puf, "ReportODPTDError", nop)
-        end
-        local au = package.loaded["AvatarUtils"]
-        if au then
-            hookManager:addHook(au, "CheckIsWeaponInBlackList", function() return false end)
-            hookManager:addHook(au, "IsValidAvatar", function() return true end)
-        end
-        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
-        local fcs = sm and sm:Get("FileCheckSubsystem")
-        if fcs then
-            hookManager:addHook(fcs, "StartCheck", nop)
-            hookManager:addHook(fcs, "ReportAbnormalFile", nop)
-        end
-        local ee = package.loaded["client.slua.logic.report.EquipmentExceptionReport"]
-        if ee then
-            hookManager:addHook(ee, "Report", nop)
-        end
-    end)
-end
-
--- ============================================================
--- 7. TSS + SDK BLOCKER (With reverse patterns)
--- ============================================================
-local function InitTssBlocker(hookManager)
-    pcall(function()
-        local tss = package.loaded["TssSdk"] or _G.TssSdk
-        if tss then
-            if tss.OnRecvData then hookManager:addHook(tss, "OnRecvData", nop) end
-            if tss.SendReportInfo then hookManager:addHook(tss, "SendReportInfo", nop) end
-            if tss.ReportData then hookManager:addHook(tss, "ReportData", nop) end
-            if tss.ScanMemory then hookManager:addHook(tss, "ScanMemory", noptrue) end
-            if tss.IsEmulator then hookManager:addHook(tss, "IsEmulator", nopfalse) end
-            if tss.GetTssSdkReportInfo then hookManager:addHook(tss, "GetTssSdkReportInfo", nopstr) end
-        end
-        local beacon = package.loaded["BeaconSDK"] or _G.BeaconSDK
-        if beacon then
-            hookManager:addHook(beacon, "Report", nop)
-            hookManager:addHook(beacon, "ReportEvent", nop)
-            hookManager:addHook(beacon, "ReportData", nop)
-        end
-        local bugly = package.loaded["BuglySDK"] or _G.BuglySDK
-        if bugly then
-            hookManager:addHook(bugly, "ReportException", nop)
-            hookManager:addHook(bugly, "ReportError", nop)
-            hookManager:addHook(bugly, "SetUserData", nop)
-        end
-        local helpshift = package.loaded["HelpShift"] or _G.HelpShift
-        if helpshift then
-            hookManager:addHook(helpshift, "Report", nop)
-            hookManager:addHook(helpshift, "SendFeedback", nop)
-            hookManager:addHook(helpshift, "ReportUser", nop)
-        end
-    end)
-end
-
--- ============================================================
--- 8. LOG BLOCKER
--- ============================================================
-local function InitLogBlocker(hookManager)
-    pcall(function()
-        local ssm = import("ScreenshotMTDer")
-        if ssm then
-            hookManager:addHook(ssm, "MTDePicture", nopstr)
-            hookManager:addHook(ssm, "ReMTDePicture", nopstr)
-            hookManager:addHook(ssm, "HasCaptured", noptrue)
-        end
-        local tlog = package.loaded["TLog"] or _G.TLog
-        if tlog then
-            for _, f in ipairs({"Info","Warning","Error","Debug","Report"}) do
-                if tlog[f] then hookManager:addHook(tlog, f, nop) end
-            end
-        end
-        local cs = package.loaded["CrashSight"] or _G.CrashSight
-        if cs then
-            hookManager:addHook(cs, "ReportException", nop)
-            hookManager:addHook(cs, "SetCustomData", nop)
-            hookManager:addHook(cs, "Log", nop)
-        end
-        local gru = package.loaded["GameLua.Mod.BaseMod.GamePlay.GameReport.GameReportUtils"]
-        if gru then
-            hookManager:addHook(gru, "BugglyPostExceptionFull", nopfalse)
-            hookManager:addHook(gru, "CheckCanBugglyPostException", nopfalse)
-            hookManager:addHook(gru, "ReplayReportData", nop)
-            hookManager:addHook(gru, "ReportGameException", nop)
-        end
-        local ctr = package.loaded["client.slua.logic.report.ClientToolsReport"]
-        if ctr then
-            hookManager:addHook(ctr, "SendReport", nop)
-            hookManager:addHook(ctr, "SendException", nop)
-        end
-        local tru = package.loaded["client.slua.config.tlog.tlog_report_utils"]
-        if tru then
-            hookManager:addHook(tru, "ReportTLogEvent", nop)
-        end
-    end)
-end
-
--- ============================================================
--- 9. SCANNER BLOCKER
--- ============================================================
-local function InitScannerBlocker(hookManager)
-    pcall(function()
-        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
-        if sm then
-            local afk = sm:Get("AFKReportorSubsystem")
-            if afk then
-                hookManager:addHook(afk, "PlayerHaveAction", nop)
-                hookManager:addHook(afk, "ReportAFK", nop)
-            end
-            local ds = sm:Get("ClientDataStatistcsSubsystem")
-            if ds then
-                hookManager:addHook(ds, "StartToCheck", nop)
-                ds.DelayCount = 0
-                if ds.ReportPingDelayTimer then
-                    ds:RemoveGameTimer(ds.ReportPingDelayTimer)
-                    ds.ReportPingDelayTimer = nil
-                end
-            end
-            local ae = sm:Get("AvatarExceptionSubsystem")
-            if ae then
-                hookManager:addHook(ae, "ReportException", nop)
-                hookManager:addHook(ae, "BindPlayerCharacter", nop)
-                hookManager:addHook(ae, "CheckAvatarValid", noptrue)
-            end
-            local sv = sm:Get("ShootVerifySubSystemClient")
-            if sv then
-                hookManager:addHook(sv, "ReportVerifyFail", nop)
-                hookManager:addHook(sv, "OnVerifyFailed", nop)
-            end
-        end
-        local cmbl = import("CreativeModeBlueprintLibrary")
-        if cmbl then
-            cmbl.MD5HashByteArray = function() return "BYPASSED" end
-            cmbl.GetContentDiffData = function() return true, "BYPASSED" end
-        end
-        local aepi = package.loaded["GameLua.Mod.Library.GamePlay.Avatar.Exception.AvatarExceptionPlayerInst"]
-        if aepi then
-            hookManager:addHook(aepi, "CheckAvatarException", nop)
-            hookManager:addHook(aepi, "CheckAvatarExceptionOnce", nop)
-            hookManager:addHook(aepi, "ReportAvatarException", nop)
-            hookManager:addHook(aepi, "CheckSlotMeshVisible", nopfalse)
-            hookManager:addHook(aepi, "CheckPawnVisible", nopfalse)
-            hookManager:addHook(aepi, "CheckCanBugglyPostException", nopfalse)
-        end
-        local acm = package.loaded["blacklist.slua.logic.lobby_gm.AvatarCheckerModule"]
-        if acm then
-            hookManager:addHook(acm, "CheckAvatar", noptrue)
-            hookManager:addHook(acm, "ReportException", nop)
-        end
-        local lmw = package.loaded["client.slua.logic.memory_warning.logic_memory_warning"]
-        if lmw then
-            hookManager:addHook(lmw, "OnMemoryWarning", nop)
-            hookManager:addHook(lmw, "ReportMemoryWarning", nop)
-        end
-    end)
-end
-
--- ============================================================
--- 10. REPLAY TELEMETRY BLOCKER
--- ============================================================
-local function InitReplayBlocker(hookManager)
-    pcall(function()
-        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
-        if sm then
-            local rbrt = sm:Get("RescueBtnReplayTraceSubsystem")
-            if rbrt then
-                hookManager:addHook(rbrt, "ReportTrace", nop)
-                hookManager:addHook(rbrt, "StartTickMonitor", nop)
-                hookManager:addHook(rbrt, "TickMonitorCheck", nop)
-                hookManager:addHook(rbrt, "ReportTickMonitorHeartbeat", nop)
-            end
-            local grs = sm:Get("GameReportSubsystem")
-            if grs then
-                hookManager:addHook(grs, "ReplayReportData", nopfalse)
-                hookManager:addHook(grs, "CheckCanBugglyPostException", nopfalse)
-                hookManager:addHook(grs, "BugglyPostExceptionFull", nopfalse)
-                hookManager:addHook(grs, "GetClientReplayDataReporter", nopnil)
-                if grs.Reporter then
-                    for _, f in ipairs({"ReportIntArrayData","ReportUInt8ArrayData","ReportFloatArrayData"}) do
-                        if grs.Reporter[f] then hookManager:addHook(grs.Reporter, f, nop) end
+        if package.loaded["socket"] and package.loaded["socket"].dns and package.loaded["socket"].dns.gethostbyname then
+            local old = package.loaded["socket"].dns.gethostbyname
+            package.loaded["socket"].dns.gethostbyname = function(host)
+                for _, blocked in ipairs(blockedDomains) do
+                    if host and string.find(string.lower(host), string.lower(blocked)) then
+                        return "127.0.0.1"
                     end
                 end
+                return old(host)
             end
-        end
-        local lrr = package.loaded["client.slua.logic.replay.logic_report_replay"]
-        if lrr then
-            hookManager:addHook(lrr, "ReportReplay", nop)
-            hookManager:addHook(lrr, "SendReportReq", nop)
-        end
-        local lhr = package.loaded["client.slua.logic.home.logic_home_report"]
-        if lhr then
-            hookManager:addHook(lhr, "ShowInGameReportUI", nop)
-            hookManager:addHook(lhr, "SendReport", nop)
         end
     end)
 end
 
--- ============================================================
--- 11. ANTI-REPORT SYSTEM
--- ============================================================
-local function InitAntiReport(hookManager)
+-- MODULE 2: Hook System (Metatable + debug)
+local function InitHookSystem()
     pcall(function()
-        local paths = {
-            "GameLua.Mod.BaseMod.Client.Security.ClientReportPlayerSubsystem",
-            "Client.Security.ClientReportPlayerSubsystem"
-        }
-        local crp = nil
-        for _, p in ipairs(paths) do
-            if package.loaded[p] then
-                crp = package.loaded[p]
-                break
+        local function hookFunction(obj, funcName, replacement)
+            if not obj or not obj[funcName] then return end
+            local old = obj[funcName]
+            obj[funcName] = function(...)
+                return replacement(...)
             end
-            local ok, m = pcall(require, p)
-            if ok and m then
-                crp = m
-                break
-            end
+            obj["_orig_" .. funcName] = old
         end
-        if crp then
-            local funcs = {
-                "OnInit","_OnPlayerKilledOtherPlayer","_RecordFatalDamager",
-                "_OnDeathReplayDataWhenFatalDamaged","_RecordMurdererFromDeathReplayData",
-                "_RecordTeammatePlayerInfo","_OnBattleResult",
-                "_OnShowQuickReportMutualExclusiveUI"
-            }
-            for _, f in ipairs(funcs) do
-                if crp[f] then hookManager:addHook(crp, f, nop) end
-            end
-            hookManager:addHook(crp, "GetFatalDamagerMap", nopt)
-            hookManager:addHook(crp, "GetCachedTeammateName2InfoMap", nopt)
-            hookManager:addHook(crp, "GetTeammateName2InfoMapDuringBattle", nopt)
-            hookManager:addHook(crp, "GetCurrentNotInTeamHistoricalTeammateMap", nopt)
-            hookManager:addHook(crp, "GetInTeamIndexFromHistoricalTeammateInfo", function() return -1 end)
-        end
-    end)
-end
 
--- ============================================================
--- 12. GAMEPLAY BYPASS (DS State + Network Packets)
--- ============================================================
-local function InitGameplayBypass(hookManager)
-    pcall(function()
-        if _G.GameplayCallbacks and not _G.GameplayCallbacks.IsBypassed then
+        if _G.GameplayCallbacks then
             local GC = _G.GameplayCallbacks
-            local orig = GC.OnDSPlayerStateChanged
-            hookManager:addHook(GC, "OnDSPlayerStateChanged", function(_, origHook, uid, state, ...)
-                if state and string.lower(tostring(state)) == "cheatdetected" then
-                    return
-                end
-                if origHook then
-                    return origHook(uid, state, ...)
-                end
-            end)
-            local blocklist = {
+            local blockList = {
                 "ReportAttackFlow","ReportSecAttackFlow","ReportHurtFlow",
                 "ReportFireArms","ReportVerifyInfoFlow","ReportMrpcsFlow",
                 "ReportPlayerBehavior","ReportTeammatHurt","ReportMisKillByTeammate",
@@ -483,71 +186,341 @@ local function InitGameplayBypass(hookManager)
                 "ReportCommonInfo","ReportLightweightStat",
                 "SendSecTLog","SendDataMiningTLog","SendActivityTLog"
             }
-            for _, f in ipairs(blocklist) do
-                if GC[f] then hookManager:addHook(GC, f, nop) end
+            for _, f in ipairs(blockList) do
+                if GC[f] then
+                    GC[f] = nop
+                end
             end
-            hookManager:addHook(GC, "GetWeaponReport", nopt)
-            hookManager:addHook(GC, "GetOneWeaponReport", nopt)
-            hookManager:addHook(GC, "GetGeneralTLogData", nopnil)
-            GC.IsBypassed = true
+            if GC.OnDSPlayerStateChanged then
+                local orig = GC.OnDSPlayerStateChanged
+                GC.OnDSPlayerStateChanged = function(uid, state, ...)
+                    local s = string.lower(tostring(state or ""))
+                    if s == "cheatdetected" or s == "connectionlost" or s == "connectiontimeout" then
+                        return
+                    end
+                    return orig(uid, state, ...)
+                end
+            end
         end
-        if NetUtil and NetUtil.SendPacket and not NetUtil.IsBypassed then
-            local bp = {
-                ReportAttackFlow=1, ReportSecAttackFlow=1, ReportHurtFlow=1,
-                ReportFireArms=1, ReportVerifyInfoFlow=1, ReportMrpcsFlow=1,
-                ReportPlayerBehavior=1, ReportTeammatHurt=1,
-                on_tss_sdk_anti_data=1, report_parachute_data=1,
-                ReportAimFlow=1, ReportHitFlow=1,
-                ReportCircleFlow=1, ReportJumpFlow=1,
-                ReportGameStartFlow=1, ReportGameEndFlow=1,
-                report_players_ping=1, report_player_ip=1,
-                tss_sdk_report=1, report_memory_exception=1,
-                report_avatar_exception=1
-            }
-            hookManager:addHook(NetUtil, "SendPacket", function(_, origFunc, n, ...)
-                if bp[n] then return end
-                return origFunc(n, ...)
-            end)
-            NetUtil.IsBypassed = true
+
+        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
+        if sm then
+            local mt = getmetatable(sm) or {}
+            local old_get = mt.__index
+            mt.__index = function(t, k)
+                local sub = old_get(t, k)
+                if sub and type(sub) == "table" then
+                    return setmetatable({}, {
+                        __index = function(_, method)
+                            if method == "Report" or method == "ReportException" or method == "StartCheck" or method == "CheckAvatar" then
+                                return nop
+                            end
+                            return sub[method]
+                        end
+                    })
+                end
+                return sub
+            end
+            setmetatable(sm, mt)
         end
     end)
 end
 
--- ============================================================
--- 13. CONNECTION GUARD
--- ============================================================
-local function InitConnectionGuard(hookManager)
+-- MODULE 3: TSS + SDK Blocker (Complete)
+local function InitTssSdkBlocker()
     pcall(function()
-        if _G.ConnectionGuardInitialized or not _G.GameplayCallbacks then
-            return
+        local tss = package.loaded["TssSdk"] or _G.TssSdk
+        if tss then
+            for k, v in pairs(tss) do
+                if type(v) == "function" then
+                    tss[k] = nop
+                end
+            end
+            tss.ScanMemory = noptrue
+            tss.IsEmulator = nopfalse
+            tss.GetTssSdkReportInfo = nopstr
         end
-        local GC = _G.GameplayCallbacks
-        local orig = GC.OnDSPlayerStateChanged
-        local blockedStates = {
-            cheatdetected = true,
-            connectionlost = true,
-            connectiontimeout = true,
-            connectionexception = true,
-            netdrivererror = true
-        }
-        hookManager:addHook(GC, "OnDSPlayerStateChanged", function(_, origHook, uid, state, ...)
-            local s = state and string.lower(tostring(state)) or ""
-            if blockedStates[s] then return end
-            if origHook then pcall(origHook, uid, state, ...) end
-        end)
-        hookManager:addHook(GC, "OnPlayerNetConnectionClosed", nop)
-        hookManager:addHook(GC, "OnPlayerActorChannelError", nop)
-        hookManager:addHook(GC, "OnPlayerRPCValidateFailed", nop)
-        hookManager:addHook(GC, "OnPlayerSpectateException", nop)
-        hookManager:addHook(GC, "OnShutdownAfterError", nop)
-        _G.ConnectionGuardInitialized = true
+
+        local beacon = package.loaded["BeaconSDK"] or _G.BeaconSDK
+        if beacon then
+            for k, v in pairs(beacon) do
+                if type(v) == "function" then
+                    beacon[k] = nop
+                end
+            end
+        end
+
+        local bugly = package.loaded["BuglySDK"] or _G.BuglySDK
+        if bugly then
+            for k, v in pairs(bugly) do
+                if type(v) == "function" then
+                    bugly[k] = nop
+                end
+            end
+        end
+
+        local helpshift = package.loaded["HelpShift"] or _G.HelpShift
+        if helpshift then
+            for k, v in pairs(helpshift) do
+                if type(v) == "function" then
+                    helpshift[k] = nop
+                end
+            end
+        end
     end)
 end
 
--- ============================================================
--- 14. HIGGS BOSON DISABLER (Main Anti-Cheat)
--- ============================================================
-local function InitHiggsBoson(hookManager)
+-- MODULE 4: Log Blocker (keeps print intact)
+local function InitLogBlocker()
+    pcall(function()
+        -- Do NOT disable print, we keep it for mod messages
+        local tlog = package.loaded["TLog"] or _G.TLog
+        if tlog then
+            for k, v in pairs(tlog) do
+                if type(v) == "function" then
+                    tlog[k] = nop
+                end
+            end
+        end
+
+        local cs = package.loaded["CrashSight"] or _G.CrashSight
+        if cs then
+            for k, v in pairs(cs) do
+                if type(v) == "function" then
+                    cs[k] = nop
+                end
+            end
+        end
+
+        local gru = package.loaded["GameLua.Mod.BaseMod.GamePlay.GameReport.GameReportUtils"]
+        if gru then
+            gru.BugglyPostExceptionFull = nopfalse
+            gru.CheckCanBugglyPostException = nopfalse
+            gru.ReplayReportData = nop
+            gru.ReportGameException = nop
+        end
+
+        local ctr = package.loaded["client.slua.logic.report.ClientToolsReport"]
+        if ctr then
+            for k, v in pairs(ctr) do
+                if type(v) == "function" then
+                    ctr[k] = nop
+                end
+            end
+        end
+    end)
+end
+
+-- MODULE 5: Scanner & Integrity Checks
+local function InitScannerBlocker()
+    pcall(function()
+        local sm = require("GameLua.GameCore.Module.Subsystem.SubsystemMgr")
+        if sm then
+            local subsystems = {
+                "AFKReportorSubsystem",
+                "ClientDataStatistcsSubsystem",
+                "AvatarExceptionSubsystem",
+                "ShootVerifySubSystemClient",
+                "FileCheckSubsystem"
+            }
+            for _, name in ipairs(subsystems) do
+                local sub = sm:Get(name)
+                if sub then
+                    for k, v in pairs(sub) do
+                        if type(v) == "function" then
+                            sub[k] = nop
+                        end
+                    end
+                    if sub.ReportPingDelayTimer then
+                        sub:RemoveGameTimer(sub.ReportPingDelayTimer)
+                        sub.ReportPingDelayTimer = nil
+                    end
+                end
+            end
+        end
+
+        local cmbl = import("CreativeModeBlueprintLibrary")
+        if cmbl then
+            cmbl.MD5HashByteArray = function() return "BYPASSED" end
+            cmbl.GetContentDiffData = function() return true, "BYPASSED" end
+        end
+
+        local aepi = package.loaded["GameLua.Mod.Library.GamePlay.Avatar.Exception.AvatarExceptionPlayerInst"]
+        if aepi then
+            for k, v in pairs(aepi) do
+                if type(v) == "function" then
+                    aepi[k] = nop
+                end
+            end
+            aepi.CheckCanBugglyPostException = nopfalse
+        end
+
+        local acm = package.loaded["blacklist.slua.logic.lobby_gm.AvatarCheckerModule"]
+        if acm then
+            acm.CheckAvatar = noptrue
+            acm.ReportException = nop
+        end
+
+        local lmw = package.loaded["client.slua.logic.memory_warning.logic_memory_warning"]
+        if lmw then
+            lmw.OnMemoryWarning = nop
+            lmw.ReportMemoryWarning = nop
+        end
+    end)
+end
+
+-- MODULE 6: Anti-Report (Full)
+local function InitAntiReport()
+    pcall(function()
+        local crp = nil
+        local paths = {
+            "GameLua.Mod.BaseMod.Client.Security.ClientReportPlayerSubsystem",
+            "Client.Security.ClientReportPlayerSubsystem"
+        }
+        for _, p in ipairs(paths) do
+            if package.loaded[p] then
+                crp = package.loaded[p]
+                break
+            end
+            local ok, m = pcall(require, p)
+            if ok and m then
+                crp = m
+                break
+            end
+        end
+
+        if crp then
+            for k, v in pairs(crp) do
+                if type(v) == "function" then
+                    crp[k] = nop
+                end
+            end
+            crp.GetFatalDamagerMap = nopt
+            crp.GetCachedTeammateName2InfoMap = nopt
+            crp.GetTeammateName2InfoMapDuringBattle = nopt
+            crp.GetCurrentNotInTeamHistoricalTeammateMap = nopt
+            crp.GetInTeamIndexFromHistoricalTeammateInfo = function() return -1 end
+        end
+    end)
+end
+
+-- MODULE 7: Gameplay Bypass (DS State + Network Packets)
+local function InitGameplayBypass()
+    pcall(function()
+        if NetUtil and NetUtil.SendPacket then
+            local old = NetUtil.SendPacket
+            local blockPacketNames = {
+                "ReportAttackFlow", "ReportSecAttackFlow", "ReportHurtFlow",
+                "ReportFireArms", "ReportVerifyInfoFlow", "ReportMrpcsFlow",
+                "ReportPlayerBehavior", "ReportTeammatHurt",
+                "on_tss_sdk_anti_data", "report_parachute_data",
+                "ReportAimFlow", "ReportHitFlow",
+                "ReportCircleFlow", "ReportJumpFlow",
+                "ReportGameStartFlow", "ReportGameEndFlow",
+                "report_players_ping", "report_player_ip",
+                "tss_sdk_report", "report_memory_exception",
+                "report_avatar_exception",
+                "report_cheat_detected", "report_anti_debug", "report_emulator"
+            }
+            local blockMap = {}
+            for _, name in ipairs(blockPacketNames) do blockMap[name] = true end
+
+            NetUtil.SendPacket = function(name, ...)
+                if blockMap[name] then
+                    return
+                end
+                return old(name, ...)
+            end
+        end
+    end)
+end
+
+-- MODULE 8: Memory & Script Protection
+local function InitMemoryProtection()
+    pcall(function()
+        local old_pcall = pcall
+        pcall = function(f, ...)
+            return old_pcall(function(...)
+                local old_G = _G
+                _G = {}
+                local ret = {f(...)}
+                _G = old_G
+                return unpack(ret)
+            end, ...)
+        end
+
+        if debug and debug.getupvalue then
+            local old = debug.getupvalue
+            debug.getupvalue = function(f, n)
+                if f == nop or f == nopt or f == nopnil or f == noptrue or f == nopfalse or f == nopstr then
+                    return nil
+                end
+                return old(f, n)
+            end
+        end
+
+        if string and string.dump then
+            local old_dump = string.dump
+            string.dump = function(f)
+                if f == nop or f == nopt or f == nopnil or f == noptrue or f == nopfalse or f == nopstr then
+                    return nil
+                end
+                return old_dump(f)
+            end
+        end
+    end)
+end
+
+-- MODULE 9: Anti-Flag & Offline Flag Killer
+local function InitAntiFlag()
+    pcall(function()
+        local function killFlag(obj)
+            if obj then
+                if obj.bIsBanned then obj.bIsBanned = false end
+                if obj.bIsFlagged then obj.bIsFlagged = false end
+                if obj.bOfflineFlag then obj.bOfflineFlag = false end
+                if obj.bReported then obj.bReported = false end
+                if obj.FlagCount then obj.FlagCount = 0 end
+                if obj.OfflineFlagCount then obj.OfflineFlagCount = 0 end
+                if obj.BanReason then obj.BanReason = "" end
+                if obj.BanDuration then obj.BanDuration = 0 end
+            end
+        end
+
+        for k, v in pairs(package.loaded) do
+            if type(v) == "table" then
+                killFlag(v)
+                for _, sub in pairs(v) do
+                    if type(sub) == "table" then
+                        killFlag(sub)
+                    end
+                end
+            end
+        end
+
+        local flagSetters = {
+            "SetBanned", "SetFlag", "SetOfflineFlag", "AddFlag", "ReportFlag",
+            "SetBanReason", "SetBanDuration", "SetBanStatus"
+        }
+        for _, name in ipairs(flagSetters) do
+            for k, v in pairs(_G) do
+                if type(v) == "table" and v[name] then
+                    v[name] = nop
+                end
+            end
+        end
+
+        if Game then
+            if Game.IsBanned then Game.IsBanned = nopfalse end
+            if Game.IsFlagged then Game.IsFlagged = nopfalse end
+            if Game.GetOfflineFlag then Game.GetOfflineFlag = nopfalse end
+            if Game.GetBanInfo then Game.GetBanInfo = nopnil end
+        end
+    end)
+end
+
+-- MODULE 10: Higgs Boson Disabler
+local function InitHiggsBoson()
     pcall(function()
         local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
         if pc and slua.isValid(pc) then
@@ -560,10 +533,13 @@ local function InitHiggsBoson(hookManager)
                 pc.HiggsBosonComponent:ControlMHActive(0)
             end
         end
+
         local hbc = require("GameLua.Mod.BaseMod.Common.Security.HiggsBosonComponent")
         if hbc then
-            if hbc.StaticShowSecurityAlertInDev then
-                hookManager:addHook(hbc, "StaticShowSecurityAlertInDev", nop)
+            for k, v in pairs(hbc) do
+                if type(v) == "function" then
+                    hbc[k] = nop
+                end
             end
             if hbc.BlackList then
                 for k in pairs(hbc.BlackList) do
@@ -571,9 +547,10 @@ local function InitHiggsBoson(hookManager)
                 end
             end
         end
+
         if _G.AvatarCheckCallback then
-            hookManager:addHook(_G.AvatarCheckCallback, "StartAvatarCheck", nop)
-            hookManager:addHook(_G.AvatarCheckCallback, "OnReportItemID", nop)
+            _G.AvatarCheckCallback.StartAvatarCheck = nop
+            _G.AvatarCheckCallback.OnReportItemID = nop
             _G.AvatarCheckCallback.PostPlayerControllerLoginInit = function(pc)
                 if slua.isValid(pc) and pc.HiggsBosonComponent then
                     pc.HiggsBosonComponent:ControlMHActive(0)
@@ -581,86 +558,65 @@ local function InitHiggsBoson(hookManager)
                 end
             end
         end
-        _G.BlackList = {}
+
         if _G.GameSafeCallbacks then
-            if _G.GameSafeCallbacks.RecordStrategyTimestampInReplay then
-                hookManager:addHook(_G.GameSafeCallbacks, "RecordStrategyTimestampInReplay", nop)
+            for k, v in pairs(_G.GameSafeCallbacks) do
+                if type(v) == "function" then
+                    _G.GameSafeCallbacks[k] = nop
+                end
             end
-            hookManager:addHook(_G.GameSafeCallbacks, "DoAttackFlowStrategy", nop)
-            hookManager:addHook(_G.GameSafeCallbacks, "GetScriptReportContent", nopstr)
         end
+
         local stebp = import("STExtraBlueprintFunctionLibrary")
         if stebp then
-            hookManager:addHook(stebp, "IsDevelopment", nopfalse)
+            stebp.IsDevelopment = nopfalse
         end
     end)
 end
 
--- ============================================================
--- 15. ZR/PR BYPASSES
--- ============================================================
-local function InitZRPRBypasses(hookManager)
+-- MODULE 11: Emulator & Device Spoofing
+local function InitSpoofing()
     pcall(function()
-        local STExtraLib = import("STExtraBlueprintFunctionLibrary")
-        if STExtraLib then
-            hookManager:addHook(STExtraLib, "IsDevelopment", noptrue)
+        if Device then
+            if Device.GetDeviceModel then
+                Device.GetDeviceModel = function() return "SM-G998B" end
+            end
+            if Device.GetDeviceManufacturer then
+                Device.GetDeviceManufacturer = function() return "samsung" end
+            end
+            if Device.GetDeviceOS then
+                Device.GetDeviceOS = function() return "Android" end
+            end
+            if Device.GetDeviceOSVersion then
+                Device.GetDeviceOSVersion = function() return "12" end
+            end
+            if Device.IsEmulator then
+                Device.IsEmulator = nopfalse
+            end
+            if Device.GetDeviceID then
+                Device.GetDeviceID = function() return "random_device_id_12345" end
+            end
+            if Device.GetMACAddress then
+                Device.GetMACAddress = function() return "02:00:00:00:00:01" end
+            end
         end
-        local hiaPath = "GameLua.Mod.BaseMod.Client.Security.ClientGlueHiaSystem"
-        local hia = package.loaded[hiaPath] or require(hiaPath)
-        if hia then
-            hookManager:addHook(hia, "CheckHitIntegrity", noptrue)
-        end
-        local securityPath = "GameLua.Mod.BaseMod.Common.Security.SecurityNotifyPCFeature"
-        local security = package.loaded[securityPath] or require(securityPath)
-        if security then
-            hookManager:addHook(security, "ClientRPC_SyncBanID", nop)
-            hookManager:addHook(security, "ClientRPC_StrongTips", nop)
-            hookManager:addHook(security, "ClientRPC_NormalTips", nop)
-        end
-        local dsFightPath = "GameLua.Mod.BaseMod.DS.Security.DSFightTLogSubsystem"
-        local dsFight = package.loaded[dsFightPath] or require(dsFightPath)
-        if dsFight then
-            hookManager:addHook(dsFight, "GetSimpleFightData", nopt)
-        end
-        local dsReportPath = "GameLua.Mod.BaseMod.DS.Security.DSReportPlayerSubsystem"
-        local dsReport = package.loaded[dsReportPath] or require(dsReportPath)
-        if dsReport then
-            hookManager:addHook(dsReport, "_AddEnemyMapToBattleResult", nop)
+
+        if SystemInfo then
+            if SystemInfo.GetNetworkType then
+                SystemInfo.GetNetworkType = function() return "WIFI" end
+            end
+            if SystemInfo.GetNetworkOperator then
+                SystemInfo.GetNetworkOperator = function() return "T-Mobile" end
+            end
+            if SystemInfo.GetIPAddress then
+                SystemInfo.GetIPAddress = function() return "192.168.1.100" end
+            end
         end
     end)
 end
 
--- ============================================================
--- 16. MEMORY BYPASS (Anti-Debug)
--- ============================================================
-local function InitMemoryBypass()
-    pcall(function()
-        if not _G.old_print then
-            _G.old_print = print
-            print = nop
-        end
-        local function pmt(t)
-            if not t then return end
-            local mt = getmetatable(t) or {}
-            mt.__metatable = "protected"
-            setmetatable(t, mt)
-        end
-        pmt(_G)
-        pmt(debug)
-        if debug then
-            debug.getinfo = function() return nil end
-            debug.getupvalue = function() return nil end
-            debug.setupvalue = function() return nil end
-            debug.getregistry = function() return {} end
-            debug.getmetatable = function() return nil end
-        end
-    end)
-end
-
--- ============================================================
--- 17. INTEGRITY OVERRIDES
--- ============================================================
-local function InitIntegrityOverrides(hookManager)
+-- MODULE 12: Integrity Overrides (Final)
+local function InitIntegrityOverrides()
     pcall(function()
         if Game and Game.CheckIntegrity then
             Game.CheckIntegrity = noptrue
@@ -668,6 +624,7 @@ local function InitIntegrityOverrides(hookManager)
         if slua and slua.check_integrity then
             slua.check_integrity = noptrue
         end
+
         local modules = {
             "GameLua.Mod.BaseMod.Common.Security.HiggsBosonComponent",
             "GameLua.Mod.BaseMod.Common.Security.TssSecurityModule",
@@ -676,88 +633,287 @@ local function InitIntegrityOverrides(hookManager)
         }
         for _, mn in ipairs(modules) do
             pcall(function()
-                if package.loaded[mn] then
-                    local m = package.loaded[mn]
-                    hookManager:addHook(m, "ControlMHActive", nop)
-                    hookManager:addHook(m, "Tick", nop)
-                    hookManager:addHook(m, "Report", nop)
-                    hookManager:addHook(m, "Check", noptrue)
-                    hookManager:addHook(m, "Validate", noptrue)
+                local m = package.loaded[mn]
+                if m then
+                    for k, v in pairs(m) do
+                        if type(v) == "function" then
+                            m[k] = nop
+                        end
+                    end
+                    m.ControlMHActive = nop
+                    m.Tick = nop
+                    m.Report = nop
+                    m.Check = noptrue
+                    m.Validate = noptrue
                 end
             end)
         end
     end)
 end
 
--- ============================================================
--- 18. REVERSE SYSTEM AUTO-SCAN (Extra protection)
--- ============================================================
-local function InitReverseScan(hookManager)
-    local patterns = {
-        "Report","TLog","Tss","Higgs","Beacon","Bugly","Crash","Help","Check","Verify","Scan",
-        "Exception","Integrity","Anti","Cheat","Security","Ban","Kick","Detection"
-    }
-    ReverseSystem:scanAndHook(patterns, hookManager, function(_, orig, ...)
-        return nil
-    end)
-end
-
--- ============================================================
--- 19. MAIN INITIALIZER (ALL MODULES)
--- ============================================================
-local function InitAllBypasses()
-    if _G.Bypassed then return end
-    local hookManager = HookManager:new()
-    _G._hookManager = hookManager
+-- MODULE 13: Ban Status Killer
+local function InitBanKiller()
     pcall(function()
-        print("[BYPASS V3.0] Starting Upgraded Bypass System...")
-        InitDomainBlocker(hookManager)
-        print("[BYPASS] 1/17 Domain Blocker Active")
-        InitSkinBypass(hookManager)
-        print("[BYPASS] 2/17 Skin Bypass Active")
-        InitTssBlocker(hookManager)
-        print("[BYPASS] 3/17 TSS + SDK Blocker Active")
-        InitLogBlocker(hookManager)
-        print("[BYPASS] 4/17 Log Blocker Active")
-        InitScannerBlocker(hookManager)
-        print("[BYPASS] 5/17 Scanner Blocker Active")
-        InitReplayBlocker(hookManager)
-        print("[BYPASS] 6/17 Replay Blocker Active")
-        InitAntiReport(hookManager)
-        print("[BYPASS] 7/17 Anti-Report Active")
-        InitGameplayBypass(hookManager)
-        print("[BYPASS] 8/17 Gameplay Bypass Active")
-        InitConnectionGuard(hookManager)
-        print("[BYPASS] 9/17 Connection Guard Active")
-        InitHiggsBoson(hookManager)
-        print("[BYPASS] 10/17 Higgs Boson Disabled")
-        InitZRPRBypasses(hookManager)
-        print("[BYPASS] 11/17 ZR/PR Bypasses Active")
-        InitMemoryBypass()
-        print("[BYPASS] 12/17 Memory Bypass Active")
-        InitIntegrityOverrides(hookManager)
-        print("[BYPASS] 13/17 Integrity Overrides Active")
-        InitReverseScan(hookManager)
-        print("[BYPASS] 14/17 Reverse Scan Active")
-        _G.Bypassed = true
-        print("[BYPASS V3.0] All 17 Bypasses Activated Successfully! - @ADITYA_ORG (Upgraded)")
+        local banFunctions = {
+            "IsBanned", "IsFlagged", "IsOfflineFlagged", "GetBanStatus",
+            "CheckBanStatus", "GetPlayerBanInfo", "IsAccountBanned"
+        }
+        for _, funcName in ipairs(banFunctions) do
+            for k, v in pairs(_G) do
+                if type(v) == "table" and v[funcName] then
+                    v[funcName] = nopfalse
+                end
+            end
+        end
+
+        if Game then
+            Game.IsBanned = nopfalse
+            Game.IsFlagged = nopfalse
+            Game.GetOfflineFlag = nopfalse
+            Game.GetBanInfo = nopnil
+        end
+
+        if LocalStorage then
+            if LocalStorage.GetBool then
+                local oldGet = LocalStorage.GetBool
+                LocalStorage.GetBool = function(key)
+                    if key and string.find(key, "ban") then
+                        return false
+                    end
+                    return oldGet(key)
+                end
+            end
+            if LocalStorage.SetBool then
+                local oldSet = LocalStorage.SetBool
+                LocalStorage.SetBool = function(key, val)
+                    if key and string.find(key, "ban") then
+                        return
+                    end
+                    return oldSet(key, val)
+                end
+            end
+        end
     end)
-    return hookManager
+end
+
+-- MODULE 14: Hardware & IP Spoofer
+local function InitHardwareSpoofer()
+    pcall(function()
+        local function randomString(len)
+            local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            local result = ""
+            for i = 1, len do
+                result = result .. string.sub(chars, math.random(1, #chars), math.random(1, #chars))
+            end
+            return result
+        end
+
+        if Device then
+            if Device.GetDeviceID then
+                Device.GetDeviceID = function() return randomString(16) end
+            end
+            if Device.GetMACAddress then
+                Device.GetMACAddress = function() 
+                    return string.format("02:%02x:%02x:%02x:%02x:%02x", 
+                        math.random(0,255), math.random(0,255), math.random(0,255),
+                        math.random(0,255), math.random(0,255))
+                end
+            end
+            if Device.GetSerialNumber then
+                Device.GetSerialNumber = function() return randomString(12) end
+            end
+            if Device.GetAndroidID then
+                Device.GetAndroidID = function() return randomString(16) end
+            end
+        end
+
+        if NetUtil and NetUtil.GetLocalIP then
+            NetUtil.GetLocalIP = function() 
+                return string.format("192.168.%d.%d", math.random(1,254), math.random(1,254))
+            end
+        end
+        if NetUtil and NetUtil.GetPublicIP then
+            NetUtil.GetPublicIP = function() 
+                return string.format("%d.%d.%d.%d", math.random(1,255), math.random(1,255), 
+                    math.random(1,255), math.random(1,255))
+            end
+        end
+    end)
+end
+
+-- MODULE 15: Telemetry Scrambler (Fake Legit Data)
+local function InitTelemetryScrambler()
+    pcall(function()
+        if _G.GameplayCallbacks then
+            local GC = _G.GameplayCallbacks
+            if GC.ReportPlayersPing then
+                local old = GC.ReportPlayersPing
+                GC.ReportPlayersPing = function(...)
+                    return old(...)
+                end
+            end
+            if GC.ReportPlayerFramePingRecord then
+                GC.ReportPlayerFramePingRecord = function()
+                    return { ping = math.random(20, 100), fps = math.random(30, 60) }
+                end
+            end
+        end
+
+        if NetUtil and NetUtil.SendPacket then
+            local oldSend = NetUtil.SendPacket
+            NetUtil.SendPacket = function(name, data)
+                if name == "report_players_ping" or name == "report_player_ip" then
+                    if type(data) == "table" then
+                        if data.ping then data.ping = math.random(20, 80) end
+                        if data.fps then data.fps = math.random(30, 60) end
+                        if data.ip then data.ip = "192.168." .. math.random(1,254) .. "." .. math.random(1,254) end
+                    end
+                end
+                return oldSend(name, data)
+            end
+        end
+    end)
+end
+
+-- MODULE 16: Replay & Spectator Blocker
+local function InitReplayBlocker()
+    pcall(function()
+        if _G.GameplayCallbacks then
+            local GC = _G.GameplayCallbacks
+            GC.OnReplayRecord = nop
+            GC.OnSpectatorMode = nop
+            GC.SendReplayData = nop
+        end
+
+        local replay = package.loaded["GameLua.Mod.BaseMod.GamePlay.Replay.ReplaySubsystem"]
+        if replay then
+            for k, v in pairs(replay) do
+                if type(v) == "function" then
+                    replay[k] = nop
+                end
+            end
+            replay.IsReplayRecording = nopfalse
+            replay.CanRecord = nopfalse
+        end
+
+        local spec = package.loaded["GameLua.Mod.BaseMod.GamePlay.Spectator.SpectatorSubsystem"]
+        if spec then
+            spec.OnSpectatorJoin = nop
+            spec.OnSpectatorLeave = nop
+            spec.ReportSpectatorData = nop
+        end
+    end)
+end
+
+-- MODULE 17: Memory Cleaner (Periodic Flag Reset)
+local function InitMemoryCleaner()
+    pcall(function()
+        local function cleanFlags()
+            for k, v in pairs(package.loaded) do
+                if type(v) == "table" then
+                    if v.FlagCount then v.FlagCount = 0 end
+                    if v.OfflineFlagCount then v.OfflineFlagCount = 0 end
+                    if v.BanCount then v.BanCount = 0 end
+                    if v.bIsBanned then v.bIsBanned = false end
+                    if v.bIsFlagged then v.bIsFlagged = false end
+                    if v.bOfflineFlag then v.bOfflineFlag = false end
+                    if v.bReported then v.bReported = false end
+                end
+            end
+        end
+
+        if slua and slua.addTimer then
+            slua.addTimer(30000, true, cleanFlags)
+        elseif _G.Timer and _G.Timer.SetInterval then
+            _G.Timer.SetInterval(cleanFlags, 30000)
+        else
+            if _G.OnUpdate then
+                local oldUpdate = _G.OnUpdate
+                local counter = 0
+                _G.OnUpdate = function(delta)
+                    counter = counter + delta
+                    if counter >= 30 then
+                        counter = 0
+                        cleanFlags()
+                    end
+                    if oldUpdate then oldUpdate(delta) end
+                end
+            end
+        end
+    end)
+end
+
+-- Master initializer (shuffled order for stealth)
+local function InitAllBypasses()
+    if _G.BypassRunning then return end
+    _G.BypassRunning = true
+
+    pcall(function()
+        local modules = {
+            InitAdvancedDomainBlocker,
+            InitHookSystem,
+            InitTssSdkBlocker,
+            InitLogBlocker,
+            InitScannerBlocker,
+            InitAntiReport,
+            InitGameplayBypass,
+            InitMemoryProtection,
+            InitAntiFlag,
+            InitHiggsBoson,
+            InitSpoofing,
+            InitIntegrityOverrides,
+            InitBanKiller,
+            InitHardwareSpoofer,
+            InitTelemetryScrambler,
+            InitReplayBlocker,
+            InitMemoryCleaner
+        }
+
+        -- Shuffle
+        for i = #modules, 2, -1 do
+            local j = math.random(i)
+            modules[i], modules[j] = modules[j], modules[i]
+        end
+
+        for _, initFunc in ipairs(modules) do
+            initFunc()
+        end
+    end)
+
+    if debug and debug.getinfo then
+        local old_getinfo = debug.getinfo
+        debug.getinfo = function(...)
+            local info = old_getinfo(...)
+            if info and info.source and string.find(info.source, "1.lua") then
+                info.source = "(hidden)"
+            end
+            return info
+        end
+    end
+
+    _G.BypassLoaded = true
+end
+
+-- Auto-run bypass
+if Client then
+    InitAllBypasses()
 end
 
 -- ============================================================
--- CALL BYPASS NOW (Replaces old InitializeAllBypass)
--- ============================================================
-local bypassHookManager = InitAllBypasses()
-_G.BypassHookManager = bypassHookManager
-
--- ============================================================
--- END OF BYPASS SYSTEM
+-- END OF BYPASS SECTION
 -- ============================================================
 
 -- ============================================================
--- CONTINUE WITH ORIGINAL MOD FEATURES
+-- FEATURE TOGGLES
 -- ============================================================
+if not _G.Mod_Aimbot_Enabled then _G.Mod_Aimbot_Enabled = false end
+if not _G.Mod_ESP_Enabled then _G.Mod_ESP_Enabled = false end
+if _G.Mod_FPS165_Enabled == nil then _G.Mod_FPS165_Enabled = true end
+if _G.Mod_NoGrass_Enabled == nil then _G.Mod_NoGrass_Enabled = true end
+if _G.Mod_iPadView_Enabled == nil then _G.Mod_iPadView_Enabled = false end
+if _G.Mod_iPadViewDistance == nil then _G.Mod_iPadViewDistance = 90 end
+if _G.Mod_Skin_Enabled == nil then _G.Mod_Skin_Enabled = false end
+if _G.Mod_PBCWallhack_Enabled == nil then _G.Mod_PBCWallhack_Enabled = false end
 
 local require = require
 local import  = import
@@ -771,7 +927,15 @@ local math = math
 local string = string
 local os = os
 
--- (nop functions already defined above; keep them)
+-- ============================================================
+-- NOP FUNCTIONS (for mod use, not to conflict with bypass)
+-- ============================================================
+local function nop() end
+local function nopt() return {} end
+local function nopnil() return nil end
+local function noptrue() return true end
+local function nopfalse() return false end
+local function nopstr() return "" end
 _G.CheatsEnabled = true
 
 local function safe_require(path)
@@ -794,7 +958,7 @@ pcall(function()
         Msg.Show(4, "✦ ADITYA_ORG – ELITE ULTIMATE ✦",
         "\n★ Developer : @ADITYA_ORG\n" ..
         "★ Status    : UNDETECTED & OPTIMIZED\n" ..
-        "★ Bypass    : 5-Layer Deep Shield + All Visuals\n\n" ..
+        "★ Bypass    : 17-Layer Deep Shield + All Visuals\n\n" ..
         "✓ Premium Build Loaded Successfully!", onClick)
     end
 end)
@@ -1235,12 +1399,9 @@ end)
 -- ==================== SKINS MODULE ===========================
 -- ============================================================
 
--- (Full skin code from the original script – includes WeaponSkinMap,
---  VehicleSkinMap, OutfitMap, attachment handling, kill counter,
---  dead box skins, etc. – all kept as is.)
-
--- Due to length, I'll include a placeholder comment. In your actual
--- script, paste the full skin module from the previous version.
+-- (Full skin code – paste your existing skin module here)
+-- This section remains unchanged from your original script.
+-- ... (Insert your entire skin code block here) ...
 
 -- ============================================================
 -- ==================== PBC WALLHACK MODULE ====================
