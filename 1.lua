@@ -2,7 +2,7 @@
 -- MODDED BY ADITYA_ORG + @ADITYA_ORG
 -- Complete MOD with 16‑Layer Bypass, SKINS, PBC WALLHACK
 -- All features: Aimbot, ESP, PBC Wallhack, 165 FPS, No Grass, iPad View, SKINS
--- Bypass integrated from TrnDravix's Ultimate Shield
+-- Bypass integrated from ADITYA_ORG Ultimate Shield
 -- ============================================================
 
 -- ============================================================
@@ -26,6 +26,10 @@ if _G.Mod_iPadView_Enabled == nil then _G.Mod_iPadView_Enabled = false end
 if _G.Mod_iPadViewDistance == nil then _G.Mod_iPadViewDistance = 90 end
 if _G.Mod_Skin_Enabled == nil then _G.Mod_Skin_Enabled = false end
 if _G.Mod_PBCWallhack_Enabled == nil then _G.Mod_PBCWallhack_Enabled = false end
+
+-- NEW toggles for Enemy Counter and Vehicle ESP
+if _G.Mod_EnemyCounter_Enabled == nil then _G.Mod_EnemyCounter_Enabled = false end
+if _G.Mod_VehicleESP_Enabled == nil then _G.Mod_VehicleESP_Enabled = false end
 
 if _G.Mod_Chams_GreenEnabled == nil then _G.Mod_Chams_GreenEnabled = false end
 if _G.Mod_Chams_YellowEnabled == nil then _G.Mod_Chams_YellowEnabled = false end
@@ -758,13 +762,13 @@ pcall(function()
         "\n★ Developer : @ADITYA_ORG\n" ..
         "★ Status    : UNDETECTED & OPTIMIZED\n" ..
         "★ Bypass    : 16‑Layer Ultimate Shield\n" ..
-        "★ PBC WH    : Always On\n\n" ..
+        "★ ADITYA OFFICIAL  : Always On Fire\n\n" ..
         "✓ Premium Build Loaded Successfully!", onClick)
     end
 end)
 
 -- ============================================================
--- ESP (AddDebugText) – unchanged
+-- ESP (AddDebugText) – REMOVED BOT/PLAYER COUNT & WATERMARK
 -- ============================================================
 local SecurityCommonUtils = require("GameLua.Mod.BaseMod.Common.Security.SecurityCommonUtils")
 local ASTExtraPlayerController = import("/Script/ShadowTrackerExtra.STExtraPlayerController")
@@ -824,9 +828,6 @@ local function ESPTick()
         cachedPawns = Game:GetAllPlayerPawns() or {}
     end
 
-    local botCount = 0
-    local playerCount = 0
-
     local totalAlive = 0
     for _, p in pairs(cachedPawns) do
         if slua.isValid(p) and p ~= currentPawn and p.TeamID ~= myTeamId and IsPawnAlive(p) then
@@ -843,10 +844,6 @@ local function ESPTick()
                 local dy = enemyPos.Y - myPos.Y
                 local dz = enemyPos.Z - myPos.Z
                 local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-
-                local isBot = false
-                pcall(function() isBot = Game:IsAI(tPawn) end)
-                if isBot then botCount = botCount + 1 else playerCount = playerCount + 1 end
 
                 if dist < 600000 and HUD then
                     local name = tPawn.PlayerName or "UNKNOWN"
@@ -929,11 +926,7 @@ local function ESPTick()
             end
         end
     end
-
-    if not crowded and HUD and currentPawn then
-        HUD:AddDebugText(string.format("BOT : %d     PLAYER : %d", botCount, playerCount), currentPawn, 1, {X=0,Y=0,Z=150}, {X=0,Y=0,Z=150}, {R=255,G=255,B=0,A=255}, true, false, true, nil, 1.0, true)
-        HUD:AddDebugText("✦REAL DEV @ADITYA_ORG✦", currentPawn, 1, {X=0,Y=0,Z=145}, {X=0,Y=0,Z=145}, {R=0,G=200,B=255,A=255}, true, false, true, nil, 1.0, true)
-    end
+    -- REMOVED: BOT/PLAYER count and watermark
 end
 
 pcall(function()
@@ -966,6 +959,143 @@ pcall(function()
 
     _G._ESPWatchdogHandle = Game:SetTimer(1.0, true, Watchdog)
     Watchdog()
+end)
+
+-- ============================================================
+-- ENEMY COUNTER – Standalone (as provided)
+-- ============================================================
+_G.MOD_EnemyCounterEnabled = _G.MOD_EnemyCounterEnabled ~= false   -- default: true
+_G.MOD_Watermark_Enabled   = _G.MOD_Watermark_Enabled ~= false     -- adds watermark if enabled
+
+function EnemyCounterLoop()
+    if not _G.MOD_EnemyCounterEnabled then return end
+
+    local GameplayData = require("GameLua.GameCore.Data.GameplayData")
+    local player = GameplayData and GameplayData.GetPlayerCharacter()
+    if not slua.isValid(player) then return end
+
+    local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
+    if not slua.isValid(pc) then return end
+
+    local hud = pc:GetHUD()
+    if not slua.isValid(hud) then return end
+
+    local myTeamId = player.TeamID or 0
+    local myPos = player:K2_GetActorLocation()
+    if not myPos then return end
+
+    local enemyCount = 0
+    local MAX_DIST_SQ = 900000000  -- 300m squared (in cm)
+
+    local allPawns = Game:GetAllPlayerPawns() or {}
+    for _, pawn in pairs(allPawns) do
+        if slua.isValid(pawn) and pawn ~= player then
+            local pawnTeam = pawn.TeamID or 0
+            if pawnTeam ~= myTeamId then
+                local pos = pawn:K2_GetActorLocation()
+                if pos then
+                    local dx = pos.X - myPos.X
+                    local dy = pos.Y - myPos.Y
+                    local dz = pos.Z - myPos.Z
+                    if dx*dx + dy*dy + dz*dz <= MAX_DIST_SQ then
+                        enemyCount = enemyCount + 1
+                    end
+                end
+            end
+        end
+    end
+
+    -- Build the display string
+    local text = ""
+    local COLOR_SAFE  = { R = 0,   G = 255, B = 200, A = 255 }
+    local COLOR_WARN  = { R = 255, G = 150, B = 0,   A = 255 }
+    local COLOR_DANGER= { R = 255, G = 20,  B = 60,  A = 255 }
+    local color = COLOR_SAFE
+
+    if enemyCount == 0 then
+        text = "[ AREA SECURE ]"
+        color = COLOR_SAFE
+    elseif enemyCount == 1 then
+        text = "! WARNING : 1 ENEMY !"
+        color = COLOR_WARN
+    else
+        text = "[ DANGER : " .. enemyCount .. " ENEMIES ]"
+        color = COLOR_DANGER
+    end
+
+    if _G.MOD_Watermark_Enabled then
+        text = text .. "\n✦ REAL DEV ADITYA ORG ✦"
+    end
+
+    if text ~= "" then
+        local OFFSET = { X = 0, Y = 0, Z = 35 }
+        hud:AddDebugText(text, player, 1.1, OFFSET, OFFSET, color, true, false, true, nil, 1.05, true)
+    end
+end
+
+-- ============================================================
+-- VEHICLE ESP – Standalone (300m range)
+-- ============================================================
+local _VehicleCacheTime = 0
+local _VehicleCache = {}
+
+function VehicleESPLoop()
+    if not _G.CheatsEnabled or not _G.Mod_VehicleESP_Enabled then return end
+
+    local pc = slua_GameFrontendHUD and slua_GameFrontendHUD:GetPlayerController()
+    if not slua.isValid(pc) then return end
+
+    local player = pc:GetPlayerCharacterSafety()
+    if not slua.isValid(player) then return end
+
+    local myPos = player:K2_GetActorLocation()
+    if not myPos then return end
+
+    local hud = pc:GetHUD()
+    if not slua.isValid(hud) then return end
+
+    local now = os.clock()
+    if now - _VehicleCacheTime > 1.0 then
+        _VehicleCacheTime = now
+        _VehicleCache = Game:GetAllVehicles() or {}
+    end
+
+    local MAX_DIST_SQ = 900000000  -- 300m
+
+    for _, vehicle in pairs(_VehicleCache) do
+        if slua.isValid(vehicle) then
+            local vPos = vehicle:K2_GetActorLocation()
+            if vPos then
+                local dx = vPos.X - myPos.X
+                local dy = vPos.Y - myPos.Y
+                local dz = vPos.Z - myPos.Z
+                local distSq = dx*dx + dy*dy + dz*dz
+
+                if distSq < MAX_DIST_SQ then
+                    local dist = math.sqrt(distSq)
+                    local label = "Vehicle [" .. math.floor(dist/100) .. "m]"
+                    local offset = { X=0, Y=0, Z=100 }
+                    local color  = { R=255, G=255, B=0, A=255 }
+                    hud:AddDebugText(label, vehicle, 2.0, offset, offset, color, true, false, true, nil, 1.0, true)
+                end
+            end
+        end
+    end
+end
+
+-- ============================================================
+-- TIMERS FOR ENEMY COUNTER AND VEHICLE ESP
+-- ============================================================
+pcall(function()
+    local pc = slua_GameFrontendHUD:GetPlayerController()
+    if slua.isValid(pc) and pc.AddGameTimer then
+        pc:AddGameTimer(1.0, true, function()
+            pcall(EnemyCounterLoop)
+        end)
+        pc:AddGameTimer(0.5, true, function()
+            pcall(VehicleESPLoop)
+        end)
+    end
 end)
 
 -- ============================================================
@@ -2578,7 +2708,7 @@ _G.ChamsCleanup = function()
 end
 
 -- ============================================================
--- MENU (updated: only main features + PBC toggle; no standalone wallhack settings)
+-- MENU (updated: added Enemy Counter & Vehicle ESP toggles)
 -- ============================================================
 _G.InitModMenuTab = function()
     local LocUtil = _G.LocUtil
@@ -2647,6 +2777,30 @@ _G.InitModMenuTab = function()
                 SetFunc = function(_, value)
                     _G.Mod_PBCWallhack_Enabled = value
                     print("[MOD] PBC WALL HACK: " .. (value and "ON ✓" or "OFF ✗"))
+                    return true
+                end
+            },
+            -- NEW: Enemy Counter toggle
+            {
+                Key = "EnemyCounter",
+                UI = AliasMap.Switcher,
+                Text = "ENEMY COUNTER",
+                GetFunc = function() return _G.Mod_EnemyCounter_Enabled or false end,
+                SetFunc = function(_, value)
+                    _G.Mod_EnemyCounter_Enabled = value
+                    print("[MOD] ENEMY COUNTER: " .. (value and "ON ✓" or "OFF ✗"))
+                    return true
+                end
+            },
+            -- NEW: Vehicle ESP toggle
+            {
+                Key = "VehicleESP",
+                UI = AliasMap.Switcher,
+                Text = "VEHICLE ESP",
+                GetFunc = function() return _G.Mod_VehicleESP_Enabled or false end,
+                SetFunc = function(_, value)
+                    _G.Mod_VehicleESP_Enabled = value
+                    print("[MOD] VEHICLE ESP: " .. (value and "ON ✓" or "OFF ✗"))
                     return true
                 end
             },
