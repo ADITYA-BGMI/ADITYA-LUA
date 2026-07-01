@@ -2547,7 +2547,7 @@ local function ChamsApplyToMesh(mesh, visColor, occColor)
         mesh:SetIdeaOutlineOcclusionHighlight(true)
         mesh:OverrideIdeaOutlineColor(visColor)
         mesh:SetIdeaOutlineOcclusionColor(occColor)
-        mesh:OverrideIdeaOutlineThickness(10.0)
+        mesh:OverrideIdeaOutlineThickness(20.0)
         mesh:SetIdeaOverrideOutlineAndOcclusion(true)
     end)
     pcall(function()
@@ -2581,8 +2581,8 @@ local function ChamsTick()
         if not LinearColor then return end
 
         local colors = {
-            vis = LinearColor(50, 50, 5, 100),    -- cyan
-            occ = LinearColor(50, 0, 50, 100),    -- purple
+            vis = LinearColor(100, 100, 5, 100),    -- cyan
+            occ = LinearColor(100, 0, 100, 100),    -- purple
             bVis = LinearColor(49, 48, 0, 100),
             bOcc = LinearColor(9, 1.5, 45, 100)
         }
